@@ -1,0 +1,49 @@
+# Configuración de Ruff
+# Nivel de reglas: "E" (error), "W" (warning), "I" (info), "H" (hint)
+select = [
+    "E",  # Errores de pycodestyle
+    "W",  # Warnings de pycodestyle
+    "F",  # Pyflakes
+    "I",  # isort
+    "N",  # Nombres de variables según PEP 8
+    "UP", # Actualizaciones de sintaxis de Python
+    "YTT", # Pruebas de doctest
+    "FBT", # Booleanos en funciones
+    "Q",  # Comillas
+    "RUF", # Reglas específicas de Ruff
+]
+
+# Reglas específicas a ignorar
+ignore = [
+    "E501",  # Línea demasiado larga
+    "N802",  # Nombres de funciones no en minúscula
+    "N803",  # Primer argumento de clase no en minúscula
+    "N806",  # Variables en funciones no en minúscula
+]
+
+# Configuración específica de reglas
+[isort]
+known_first_party = ["app"]
+
+[per-file-ignores]
+"tests/*" = ["S101"]  # Ignorar aserciones en pruebas
+
+# Configuración de formato
+line-length = 88
+
+# Tratar advertencias como errores
+unfixable = []
+
+# Excluir directorios
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "build",
+    "dist",
+    "migrations",
+    "venv",
+    ".venv",
+]

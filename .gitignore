@@ -1,0 +1,88 @@
+# Entornos virtuales
+.venv
+venv/
+env/
+ENV/
+
+# Archivos de entorno
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Base de datos
+*.sqlite3
+*.db
+
+# Archivos de entorno de Python
+.python-version
+
+# Archivos de configuración de Docker
+docker-compose.override.yml
+
+# Archivos locales
+local_settings.py
+
+# Archivos de cobertura
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Archivos de desarrollo
+.DS_Store
+Thumbs.db
+
+# Archivos de migración (opcional, dependiendo de tu flujo de trabajo)
+# !/migrations/
+# !/migrations/**/
+# !/migrations/**/*.py
+# !/migrations/**/*.pyc
+
+# Archivos de configuración de Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
