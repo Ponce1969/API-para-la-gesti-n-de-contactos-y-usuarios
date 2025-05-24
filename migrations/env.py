@@ -1,12 +1,10 @@
-from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
 import os
 import sys
+from logging.config import fileConfig
+
+from alembic import context
 from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
 
 # Añadir el directorio raíz al path para poder importar desde app
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -25,17 +23,27 @@ if config.config_file_name is not None:
 
 # Configurar la URL de la base de datos desde variables de entorno
 section = config.config_ini_section
-config.set_section_option(section, "POSTGRES_USER", os.getenv("POSTGRES_USER", "postgres"))
-config.set_section_option(section, "POSTGRES_PASSWORD", os.getenv("POSTGRES_PASSWORD", "postgres"))
-config.set_section_option(section, "POSTGRES_HOST", os.getenv("POSTGRES_HOST", "localhost"))
+config.set_section_option(
+    section, "POSTGRES_USER", os.getenv("POSTGRES_USER", "postgres")
+)
+config.set_section_option(
+    section, "POSTGRES_PASSWORD", os.getenv("POSTGRES_PASSWORD", "postgres")
+)
+config.set_section_option(
+    section, "POSTGRES_HOST", os.getenv("POSTGRES_HOST", "localhost")
+)
 config.set_section_option(section, "POSTGRES_PORT", os.getenv("POSTGRES_PORT", "5432"))
-config.set_section_option(section, "POSTGRES_DB", os.getenv("POSTGRES_DB", "app_statica_db"))
+config.set_section_option(
+    section, "POSTGRES_DB", os.getenv("POSTGRES_DB", "app_statica_db")
+)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.common.database import Base
-from app.users.models import User  # Importar modelos para que Alembic los detecte
-from app.contacts.models import Contact  # Importar modelos para que Alembic los detecte
+# Importar todos los modelos para que Alembic los detecte
+from app.contacts.models import Contact, ContactGroup
+from app.roles.models import Permission, Role
+from app.users.models import User, VerificationToken
 
 target_metadata = Base.metadata
 
@@ -80,9 +88,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

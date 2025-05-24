@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     API_PREFIX: str
     BACKEND_CORS_ORIGINS: List[str]
     # ... otras configuraciones
-    
+
     class Config:
         env_file = ".env"
         case_sensitive = True

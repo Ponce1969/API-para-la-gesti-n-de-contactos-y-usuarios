@@ -1,21 +1,21 @@
-# Herramientas de desarrollo
-mypy>=1.0.0
-ruff>=0.3.0
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-pytest-cov>=4.0.0
-httpx>=0.27.0
-pre-commit>=3.0.0
-
-# Dependencias para tipos
-types-python-dateutil>=2.8.19
-types-requests>=2.31.0
-types-pyyaml>=6.0.12
 
 # Dependencias de testing
 freezegun>=1.2.0
-pytest-mock>=3.10.0
+httpx>=0.27.0
 
 # Para generar documentación
 mkdocs>=1.4.0
 mkdocs-material>=9.0.0
+# Herramientas de desarrollo
+mypy>=1.0.0
+pre-commit>=3.0.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+ruff>=0.3.0
+
+# Dependencias para tipos
+types-python-dateutil>=2.8.19
+types-pyyaml>=6.0.12
+types-requests>=2.31.0
