@@ -70,18 +70,42 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# Evento de inicio
-@app.on_event("startup")
-async def startup_event():
+# Usar el sistema moderno de eventos lifespan
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Código que se ejecuta al inicio de la aplicación
     logger.info("Iniciando la aplicación...")
     # Aquí podrías inicializar conexiones a bases de datos, etc.
-
-
-# Evento de apagado
-@app.on_event("shutdown")
-async def shutdown_event():
+    
+    yield  # Aquí se ejecuta la aplicación
+    
+    # Código que se ejecuta al apagado de la aplicación
     logger.info("Apagando la aplicación...")
     # Aquí podrías cerrar conexiones a bases de datos, etc.
+
+# Actualizamos la app para usar el lifespan
+app.router.lifespan_context = lifespan
+
+
+# Configuración del servidor MCP (Model Context Protocol)
+if settings.MCP_ENABLED:
+    try:
+        from fastapi_mcp import FastApiMCP
+        
+        logger.info("Configurando servidor MCP para integración con IA...")
+        
+        # Versión simplificada sin autenticación para prueba inicial
+        mcp = FastApiMCP(app)
+        
+        # Montar el servidor MCP en la aplicación FastAPI
+        mcp.mount()
+        logger.info("Servidor MCP configurado y montado correctamente")
+    except ImportError as e:
+        logger.error(f"Error al importar FastAPI-MCP: {e}")
+    except Exception as e:
+        logger.error(f"Error al configurar servidor MCP: {e}")
 
 
 # Para ejecutar con uvicorn directamente: uvicorn app.main:app --reload

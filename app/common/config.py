@@ -147,6 +147,21 @@ class Settings(BaseSettings):
         env="APP_RATE_LIMIT",
         description="Número máximo de peticiones por minuto por IP",
     )
+    
+    # ======================
+    # Configuración de MCP (Model Context Protocol)
+    # ======================
+    MCP_ENABLED: bool = Field(
+        False,
+        env="APP_MCP_ENABLED",
+        description="Habilitar servidor MCP para integración con IA",
+    )
+    
+    MCP_API_KEY: str = Field(
+        "e5sGnoBF81qW40JqU2Pl8GS2ioZnUHgxBUbrGWd82nw",  # Debe cambiarse en producción
+        env="APP_MCP_API_KEY",
+        description="Clave API para que sistemas de IA se autentiquen con el servidor MCP",
+    )
 
     # ======================
     # Configuraciones de desarrollo
