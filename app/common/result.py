@@ -7,16 +7,7 @@ implementando un enfoque funcional para el manejo de errores y efectos secundari
 from __future__ import annotations
 
 from functools import wraps
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Coroutine,
-    Generic,
-    TypeVar,
-    cast,
-    overload,
-)
+from typing import Any, Awaitable, Callable, Coroutine, Generic, TypeVar, cast, overload
 
 from returns.future import FutureResult, FutureResultE, future_safe
 from returns.io import IOFailure, IOResult, IOResultE, IOSuccess
@@ -31,20 +22,22 @@ _NewErrorType = TypeVar("_NewErrorType")
 
 # Re-export for easier imports
 __all__ = [
-    'Result',
-    'Success',
-    'Failure',
-    'map_failure',
-    'safe_try',
-    'async_safe_try',
-    'to_maybe',
-    'to_ioresult',
-    'from_ioresult',
-    'from_ioresult_e',
-    'get_or_raise',
-    'get_or_default',
-    'apply',
-    'sequence',
+    "Result",
+    "Success",
+    "Failure",
+    "map_failure",
+    "safe_try",
+    "async_safe_try",
+    "to_maybe",
+    "to_ioresult",
+    "from_ioresult",
+    "from_ioresult_e",
+    "get_or_raise",
+    "get_or_default",
+    "apply",
+    "sequence",
+    "is_success",
+    "is_failure",
 ]
 
 
@@ -253,3 +246,33 @@ def sequence(
             return cast(Result[list[_ValueType], _ErrorType], result)
         values.append(cast(_ValueType, result.unwrap()))
     return Success(values)
+
+
+def is_success(result: Result[_ValueType, _ErrorType]) -> bool:
+    """Comprueba si un Result es un Success.
+
+    Esta es una función auxiliar que envuelve is_successful() para proporcionar una API más intuitiva
+    y consistente en todo el proyecto.
+
+    Args:
+        result: El Result a comprobar.
+
+    Returns:
+        True si el Result es un Success, False en caso contrario.
+    """
+    return is_successful(result)
+
+
+def is_failure(result: Result[_ValueType, _ErrorType]) -> bool:
+    """Comprueba si un Result es un Failure.
+
+    Esta es una función auxiliar que complementa a is_success() para proporcionar una API más intuitiva
+    y consistente en todo el proyecto.
+
+    Args:
+        result: El Result a comprobar.
+
+    Returns:
+        True si el Result es un Failure, False en caso contrario.
+    """
+    return not is_successful(result)

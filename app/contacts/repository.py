@@ -88,7 +88,7 @@ class ContactRepository:
         except SQLAlchemyError as e:
             logger.error(f"Error al obtener contacto con ID {contact_id}: {str(e)}")
             return Failure(DatabaseError(str(e)))
-            
+
     @staticmethod
     async def get_by_email(
         db: AsyncSession, email: str, owner_id: int
@@ -125,6 +125,200 @@ class ContactRepository:
             logger.error(f"Error al obtener contacto con email {email}: {str(e)}")
             return Failure(DatabaseError(str(e)))
 
+    @staticmethod
+    async def create(
+        db: AsyncSession,
+        owner_id: int,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        company: Optional[str] = None,
+        position: Optional[str] = None,
+        contact_type: Optional[str] = None,
+        status: Optional[str] = None,
+        is_favorite: bool = False,
+        address: Optional[str] = None,
+        notes: Optional[str] = None,
+        custom_fields: Optional[Dict[str, Any]] = None,
+        contact_user_id: Optional[int] = None,
+    ) -> Result[
+        Contact, ContactAlreadyExistsError | ContactValidationError | DatabaseError
+    ]:
+        """
+        Crea un nuevo contacto.
+
+        Args:
+            db: Sesión de base de datos asíncrona.
+            owner_id: ID del usuario propietario del contacto.
+            first_name: Nombre del contacto.
+            last_name: Apellido del contacto.
+            email: Correo electrónico del contacto.
+            phone: Número de teléfono del contacto.
+            company: Empresa u organización del contacto.
+            position: Cargo o posición del contacto en la empresa.
+            contact_type: Tipo de contacto (personal, trabajo, familiar, etc.).
+            status: Estado del contacto (activo, inactivo, pendiente, bloqueado).
+            is_favorite: Indica si el contacto está marcado como favorito.
+            address: Dirección física completa del contacto.
+            notes: Notas adicionales sobre el contacto.
+            custom_fields: Campos personalizados adicionales en formato JSON.
+            contact_user_id: ID del usuario de la plataforma si el contacto está registrado.
+
+        Returns:
+            Result con el contacto creado si la operación es exitosa, o un error apropiado si no.
+        """
+        logger = logging.getLogger(__name__)
+        try:
+            # Validar campos requeridos
+            validation_errors = {}
+            if not first_name and not last_name and not email and not phone:
+                validation_errors["contact"] = "Se requiere al menos un campo identificativo (nombre, apellido, email o teléfono)"
+            
+            if validation_errors:
+                return Failure(ContactValidationError(validation_errors))
+
+            # Verificar si ya existe un contacto con el mismo email para este usuario
+            if email:
+                existing_result = await ContactRepository.get_by_email(db, email, owner_id)
+                if existing_result.is_success():
+                    return Failure(ContactAlreadyExistsError(email, owner_id))
+
+            # Crear nuevo contacto
+            now = datetime.utcnow()
+            new_contact = Contact(
+                owner_id=owner_id,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=phone,
+                company=company,
+                position=position,
+                contact_type=contact_type,
+                status=status,
+                is_favorite=is_favorite,
+                address=address,
+                notes=notes,
+                custom_fields=custom_fields,
+                contact_user_id=contact_user_id,
+                created_at=now,
+                updated_at=now,
+            )
+
+            db.add(new_contact)
+            await db.flush()
+            await db.refresh(new_contact)
+            await db.commit()
+
+            return Success(new_contact)
+        except IntegrityError as e:
+            await db.rollback()
+            logger.error(f"Error de integridad al crear contacto: {str(e)}")
+            return Failure(ContactAlreadyExistsError(email or "", owner_id))
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error(f"Error al crear contacto: {str(e)}")
+            return Failure(DatabaseError(str(e)))
+
+    @staticmethod
+    async def update(
+        db: AsyncSession, contact_id: int, owner_id: int, **kwargs
+    ) -> Result[
+        Contact,
+        ContactNotFoundError
+        | UnauthorizedContactAccessError
+        | ContactAlreadyExistsError
+        | DatabaseError,
+    ]:
+        """
+        Actualiza un contacto existente.
+
+        Args:
+            db: Sesión de base de datos asíncrona.
+            contact_id: ID del contacto a actualizar.
+            owner_id: ID del usuario propietario del contacto.
+            **kwargs: Campos a actualizar y sus nuevos valores.
+
+        Returns:
+            Result con el contacto actualizado si la operación es exitosa, o un error apropiado si no.
+        """
+        logger = logging.getLogger(__name__)
+        try:
+            # Verificar si el contacto existe y pertenece al usuario
+            contact_result = await ContactRepository.get_by_id(db, contact_id, owner_id)
+            if contact_result.is_failure():
+                return contact_result
+
+            contact = contact_result.unwrap()
+
+            # Si se intenta actualizar el email, verificar que no exista otro con ese email
+            if "email" in kwargs and kwargs["email"] != contact.email and kwargs["email"] is not None:
+                existing_result = await ContactRepository.get_by_email(
+                    db, kwargs["email"], owner_id
+                )
+                if existing_result.is_success():
+                    return Failure(
+                        ContactAlreadyExistsError(kwargs["email"], owner_id)
+                    )
+
+            # Actualizar campos
+            for key, value in kwargs.items():
+                if hasattr(contact, key):
+                    setattr(contact, key, value)
+
+            contact.updated_at = datetime.utcnow()
+            await db.commit()
+            await db.refresh(contact)
+
+            return Success(contact)
+        except IntegrityError as e:
+            await db.rollback()
+            logger.error(f"Error de integridad al actualizar contacto {contact_id}: {str(e)}")
+            return Failure(
+                ContactAlreadyExistsError(
+                    kwargs.get("email", ""), owner_id, message=str(e)
+                )
+            )
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error(f"Error al actualizar contacto {contact_id}: {str(e)}")
+            return Failure(DatabaseError(str(e)))
+
+    @staticmethod
+    async def delete(
+        db: AsyncSession, contact_id: int, owner_id: int
+    ) -> Result[None, ContactNotFoundError | UnauthorizedContactAccessError | DatabaseError]:
+        """
+        Elimina un contacto existente.
+
+        Args:
+            db: Sesión de base de datos asíncrona.
+            contact_id: ID del contacto a eliminar.
+            owner_id: ID del usuario propietario del contacto.
+
+        Returns:
+            Result con None si la eliminación es exitosa, o un error apropiado si no.
+        """
+        logger = logging.getLogger(__name__)
+        try:
+            # Verificar si el contacto existe y pertenece al usuario
+            contact_result = await ContactRepository.get_by_id(db, contact_id, owner_id)
+            if contact_result.is_failure():
+                return contact_result
+
+            contact = contact_result.unwrap()
+
+            # Eliminar el contacto
+            await db.delete(contact)
+            await db.flush()
+            await db.commit()
+
+            return Success(None)
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error(f"Error al eliminar contacto {contact_id}: {str(e)}")
+            return Failure(DatabaseError(str(e)))
+
 
 class ContactGroupRepository:
     """Repositorio para operaciones CRUD de grupos de contactos."""
@@ -132,7 +326,10 @@ class ContactGroupRepository:
     @staticmethod
     async def get_by_id(
         db: AsyncSession, group_id: int, owner_id: Optional[int] = None
-    ) -> Result[ContactGroup, ContactGroupNotFoundError | UnauthorizedGroupAccessError | DatabaseError]:
+    ) -> Result[
+        ContactGroup,
+        ContactGroupNotFoundError | UnauthorizedGroupAccessError | DatabaseError,
+    ]:
         """
         Obtiene un grupo de contactos por su ID.
 
@@ -159,7 +356,9 @@ class ContactGroupRepository:
             if group is None:
                 if owner_id is not None:
                     # Verificar si el grupo existe pero pertenece a otro usuario
-                    query_check = select(ContactGroup).where(ContactGroup.id == group_id)
+                    query_check = select(ContactGroup).where(
+                        ContactGroup.id == group_id
+                    )
                     result_check = await db.execute(query_check)
                     exists = result_check.scalar_one_or_none() is not None
 
@@ -191,8 +390,7 @@ class ContactGroupRepository:
         logger = logging.getLogger(__name__)
         try:
             query = select(ContactGroup).where(
-                ContactGroup.name == name,
-                ContactGroup.owner_id == owner_id
+                ContactGroup.name == name, ContactGroup.owner_id == owner_id
             )
             result = await db.execute(query)
             group = result.scalar_one_or_none()
@@ -240,7 +438,7 @@ class ContactGroupRepository:
                 query = query.where(
                     or_(
                         ContactGroup.name.ilike(f"%{search}%"),
-                        ContactGroup.description.ilike(f"%{search}%")
+                        ContactGroup.description.ilike(f"%{search}%"),
                     )
                 )
 
@@ -266,7 +464,8 @@ class ContactGroupRepository:
         name: str,
         description: Optional[str] = None,
     ) -> Result[
-        ContactGroup, ContactGroupAlreadyExistsError | ContactGroupValidationError | DatabaseError
+        ContactGroup,
+        ContactGroupAlreadyExistsError | ContactGroupValidationError | DatabaseError,
     ]:
         """
         Crea un nuevo grupo de contactos.
@@ -285,11 +484,15 @@ class ContactGroupRepository:
             # Validar nombre requerido
             if not name:
                 return Failure(
-                    ContactGroupValidationError({"name": "El nombre del grupo es requerido"})
+                    ContactGroupValidationError(
+                        {"name": "El nombre del grupo es requerido"}
+                    )
                 )
 
             # Verificar si ya existe un grupo con el mismo nombre para este usuario
-            existing_result = await ContactGroupRepository.get_by_name(db, name, owner_id)
+            existing_result = await ContactGroupRepository.get_by_name(
+                db, name, owner_id
+            )
             if existing_result.is_success():
                 return Failure(ContactGroupAlreadyExistsError(name, owner_id))
 
@@ -343,7 +546,9 @@ class ContactGroupRepository:
         logger = logging.getLogger(__name__)
         try:
             # Verificar si el grupo existe y pertenece al usuario
-            group_result = await ContactGroupRepository.get_by_id(db, group_id, owner_id)
+            group_result = await ContactGroupRepository.get_by_id(
+                db, group_id, owner_id
+            )
             if group_result.is_failure():
                 return group_result
 
@@ -371,7 +576,9 @@ class ContactGroupRepository:
             return Success(group)
         except IntegrityError as e:
             await db.rollback()
-            logger.error(f"Error de integridad al actualizar grupo {group_id}: {str(e)}")
+            logger.error(
+                f"Error de integridad al actualizar grupo {group_id}: {str(e)}"
+            )
             return Failure(
                 ContactGroupAlreadyExistsError(
                     kwargs.get("name", ""), owner_id, message=str(e)
@@ -385,7 +592,9 @@ class ContactGroupRepository:
     @staticmethod
     async def delete(
         db: AsyncSession, group_id: int, owner_id: int
-    ) -> Result[None, ContactGroupNotFoundError | UnauthorizedGroupAccessError | DatabaseError]:
+    ) -> Result[
+        None, ContactGroupNotFoundError | UnauthorizedGroupAccessError | DatabaseError
+    ]:
         """
         Elimina un grupo de contactos existente.
 
@@ -400,7 +609,9 @@ class ContactGroupRepository:
         logger = logging.getLogger(__name__)
         try:
             # Verificar si el grupo existe y pertenece al usuario
-            group_result = await ContactGroupRepository.get_by_id(db, group_id, owner_id)
+            group_result = await ContactGroupRepository.get_by_id(
+                db, group_id, owner_id
+            )
             if group_result.is_failure():
                 return group_result
 
@@ -453,7 +664,9 @@ class ContactGroupRepository:
                 return contact_result
 
             # Verificar si el grupo existe y pertenece al usuario
-            group_result = await ContactGroupRepository.get_by_id(db, group_id, owner_id)
+            group_result = await ContactGroupRepository.get_by_id(
+                db, group_id, owner_id
+            )
             if group_result.is_failure():
                 return group_result
 
@@ -516,7 +729,9 @@ class ContactGroupRepository:
                 return contact_result
 
             # Verificar si el grupo existe y pertenece al usuario
-            group_result = await ContactGroupRepository.get_by_id(db, group_id, owner_id)
+            group_result = await ContactGroupRepository.get_by_id(
+                db, group_id, owner_id
+            )
             if group_result.is_failure():
                 return group_result
 
@@ -556,7 +771,10 @@ class ContactGroupRepository:
         contact_type: Optional[str] = None,
         status: Optional[str] = None,
         is_favorite: Optional[bool] = None,
-    ) -> Result[List[Contact], ContactGroupNotFoundError | UnauthorizedGroupAccessError | DatabaseError]:
+    ) -> Result[
+        List[Contact],
+        ContactGroupNotFoundError | UnauthorizedGroupAccessError | DatabaseError,
+    ]:
         """
         Obtiene una lista paginada de contactos con filtros opcionales.
 
@@ -578,7 +796,9 @@ class ContactGroupRepository:
         try:
             # Si se especifica un grupo, verificar que exista y pertenezca al usuario
             if group_id is not None:
-                group_result = await ContactGroupRepository.get_by_id(db, group_id, owner_id)
+                group_result = await ContactGroupRepository.get_by_id(
+                    db, group_id, owner_id
+                )
                 if group_result.is_failure():
                     return group_result
 

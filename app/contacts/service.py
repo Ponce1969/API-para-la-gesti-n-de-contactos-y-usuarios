@@ -3,8 +3,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 from returns.result import Failure, Result, Success
+from app.common.result import is_success, is_failure
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.common.errors import DatabaseError
 from app.contacts.errors import (
     ContactAlreadyExistsError,
     ContactAlreadyInGroupError,
@@ -14,12 +16,11 @@ from app.contacts.errors import (
     ContactNotFoundError,
     ContactNotInGroupError,
     ContactValidationError,
-    DatabaseError,
     UnauthorizedContactAccessError,
     UnauthorizedGroupAccessError,
 )
 from app.contacts.models import Contact, ContactGroup
-from app.contacts.repository import ContactGroupRepository, ContactRepository
+from app.contacts.repository import ContactRepository, ContactGroupRepository
 from app.contacts.schemas import (
     ContactCreate,
     ContactGroupCreate,
@@ -106,7 +107,7 @@ class ContactService:
             if group_result.is_failure():
                 return group_result
 
-        return await ContactRepository.list_contacts(
+        return await ContactGroupRepository.list_contacts(
             db=db,
             owner_id=owner_id,
             skip=skip,
