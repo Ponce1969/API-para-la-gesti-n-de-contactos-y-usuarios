@@ -4,6 +4,7 @@ Módulo de excepciones personalizadas para el módulo de autenticación.
 Este módulo define excepciones personalizadas para manejar errores
 de autenticación y autorización de manera consistente en toda la aplicación.
 """
+
 from fastapi import HTTPException, status
 
 # Excepción para credenciales inválidas
@@ -62,41 +63,56 @@ INVALID_VERIFICATION_TOKEN_EXCEPTION = HTTPException(
     detail="El enlace de verificación no es válido o ha expirado.",
 )
 
+
 class AuthenticationError(Exception):
     """Excepción base para errores de autenticación."""
+
     pass
+
 
 class EmailAlreadyExistsError(AuthenticationError):
     """Excepción lanzada cuando se intenta registrar un email que ya existe."""
+
     pass
+
 
 class InvalidCredentialsError(AuthenticationError):
     """Excepción lanzada cuando las credenciales son inválidas."""
+
     pass
+
 
 class InactiveUserError(AuthenticationError):
     """Excepción lanzada cuando un usuario inactivo intenta autenticarse."""
+
     pass
+
 
 class UnverifiedAccountError(AuthenticationError):
     """Excepción lanzada cuando un usuario no verificado intenta autenticarse."""
+
     pass
+
 
 class InvalidTokenError(AuthenticationError):
     """Excepción lanzada cuando un token es inválido o ha expirado."""
+
     pass
+
 
 class ExpiredTokenError(InvalidTokenError):
     """Excepción lanzada cuando un token ha expirado."""
+
     pass
+
 
 def handle_auth_error(error: AuthenticationError) -> HTTPException:
     """
     Maneja una excepción de autenticación y devuelve la respuesta HTTP apropiada.
-    
+
     Args:
         error: Excepción de autenticación.
-        
+
     Returns:
         HTTPException: Respuesta HTTP con el código de estado y mensaje apropiados.
     """

@@ -4,22 +4,29 @@ Módulo de rutas de la API para autenticación y autorización.
 Este módulo define los endpoints para el inicio de sesión, registro,
 renovación de tokens y recuperación de contraseñas.
 """
+
 from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.config import settings
 from app.common.database import get_db
-from app.common.errors import AuthenticationError, DatabaseError
-from sqlalchemy.ext.asyncio import AsyncSession
+# Import specific errors from common.errors, AuthenticationError is not defined there
+from app.common.errors import DatabaseError, ResourceNotFoundError # Assuming ResourceNotFoundError might be useful
 
 from . import schemas, service
-from .models import User
-from .schemas import Token, UserCreate, UserResponse
+from . import errors as auth_errors # Import auth specific errors
+from app.users import service as user_service # Import user service
+from app.users.models import User # User model is in the users slice
+from .schemas import Token # Token schema is local to auth
+from app.users.schemas import UserCreate, UserResponse # User schemas are in the users slice
+from app.users.errors import UserNotFoundError as UsersUserNotFoundError # Specific user not found from user service
 
 router = APIRouter()
+
 
 @router.post(
     "/login",
@@ -32,41 +39,69 @@ async def login_for_access_token(
     db: AsyncSession = Depends(get_db),
 ) -> Token:
     """
-    Autentica un usuario y devuelve un token de acceso.
-    
+    Autentica a un usuario y devuelve un token de acceso JWT.
+
+    Este endpoint maneja el inicio de sesión del usuario.
+    Realiza las siguientes operaciones:
+    1. Recibe las credenciales del usuario (correo electrónico como `username` y contraseña)
+       a través de un formulario (`OAuth2PasswordRequestForm`).
+    2. Llama al servicio `auth_service.authenticate_user` para verificar las credenciales
+       contra la base de datos y el estado de la cuenta (activa y verificada).
+    3. Si la autenticación es exitosa, genera un token de acceso JWT utilizando
+       `auth_service.create_access_token`.
+    4. Devuelve el token de acceso y el tipo de token ("bearer").
+
     Args:
-        form_data: Datos del formulario con username y password.
-        db: Sesión de base de datos.
-        
+        form_data (OAuth2PasswordRequestForm, optional): Un formulario que contiene
+                                                         el `username` (correo electrónico del usuario)
+                                                         y la `password`. Inyectado por FastAPI.
+                                                         Defaults to Depends().
+        db (AsyncSession, optional): La sesión de base de datos asíncrona, inyectada
+                                     por FastAPI. Defaults to Depends(get_db).
+
     Returns:
-        Token de acceso JWT.
-        
+        Token: Un objeto que contiene el `access_token` JWT y `token_type` ("bearer").
+               Se valida contra el esquema `Token`.
+
     Raises:
-        HTTPException: Si las credenciales son inválidas.
+        HTTPException (401 Unauthorized): Si las credenciales proporcionadas son inválidas
+                                          (email no encontrado, contraseña incorrecta),
+                                          o si la cuenta del usuario está inactiva o no verificada.
+                                          Incluye un encabezado `WWW-Authenticate: Bearer`.
+        HTTPException (500 Internal Server Error): Si ocurre un error inesperado durante
+                                                   el proceso de autenticación, como un
+                                                   problema de conexión con la base de datos.
     """
     try:
+        # service.authenticate_user will raise specific errors if authentication fails
         user = await service.authenticate_user(
             db, email=form_data.username, password=form_data.password
         )
-        if not user:
-            raise AuthenticationError("Email o contraseña incorrectos")
-            
+        # If authenticate_user returns without error, user is valid.
+
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = service.create_access_token(
             data={"sub": user.email}, expires_delta=access_token_expires
         )
-        
+
         return Token(
             access_token=access_token,
             token_type="bearer",
-            user=user,
+            # Token schema does not include 'user' field
         )
-    except AuthenticationError as e:
+    except (auth_errors.InvalidCredentialsError, auth_errors.InactiveUserError, auth_errors.UnverifiedAccountError) as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail=str(e), # Use the message from the specific auth error
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except DatabaseError as e:
+        # Handle potential database errors during authentication if any
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error de base de datos durante la autenticación.",
+        )
+
 
 @router.post(
     "/register",
@@ -80,31 +115,55 @@ async def register_user(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
-    Crea un nuevo usuario en el sistema.
-    
+    Registra un nuevo usuario en el sistema.
+
+    Este endpoint permite la creación de una nueva cuenta de usuario.
+    Realiza las siguientes operaciones:
+    1. Recibe los datos del usuario para el registro (`user_data`) que deben cumplir
+       con el esquema `UserCreate`.
+    2. Llama al servicio `auth_service.register_user` para procesar la lógica de negocio,
+       que incluye la validación de datos, el hash de la contraseña y la creación
+       del usuario en la base de datos.
+    3. Si el registro es exitoso, devuelve los datos del usuario creado (sin la contraseña)
+       según el esquema `UserResponse` y un código de estado HTTP 201 (Created).
+
     Args:
-        user_data: Datos del nuevo usuario.
-        db: Sesión de base de datos.
-        
+        user_data (UserCreate): Un objeto que contiene los datos del nuevo usuario,
+                                incluyendo email, contraseña y nombre completo.
+                                Se valida contra el esquema `UserCreate`.
+        db (AsyncSession, optional): La sesión de base de datos asíncrona, inyectada
+                                     por FastAPI. Defaults to Depends(get_db).
+
     Returns:
-        El usuario creado.
-        
+        UserResponse: Un objeto que contiene los datos del usuario recién creado,
+                      excluyendo información sensible como la contraseña.
+                      Se valida contra el esquema `UserResponse`.
+
     Raises:
-        HTTPException: Si el email ya está registrado.
+        HTTPException (409 Conflict): Si el correo electrónico proporcionado en `user_data`
+                                      ya está registrado en el sistema.
+        HTTPException (500 Internal Server Error): Si ocurre un error inesperado durante
+                                                   el proceso de registro, como un problema
+                                                   de conexión con la base de datos u otro
+                                                   error interno del servidor.
     """
     try:
         user = await service.register_user(db, user_data)
-        return user
-    except service.EmailAlreadyExistsError as e:
+        # Assuming service.register_user returns a User model (SQLAlchemy)
+        # and UserResponse is compatible or this endpoint should return User (SQLAlchemy model)
+        # For now, let's assume UserResponse can be created from the User model if needed by FastAPI
+        return user 
+    except auth_errors.EmailAlreadyExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El correo electrónico ya está registrado.",
+            detail=str(e), # Use the message from the specific auth error
         )
     except DatabaseError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al crear el usuario.",
         )
+
 
 @router.post(
     "/token/refresh",
@@ -117,46 +176,85 @@ async def refresh_token(
     db: AsyncSession = Depends(get_db),
 ) -> Token:
     """
-    Renueva un token de acceso usando un refresh token.
-    
+    Renueva un token de acceso utilizando un token de actualización (refresh token).
+
+    Este endpoint permite a los usuarios obtener un nuevo token de acceso JWT
+    sin necesidad de volver a ingresar sus credenciales, siempre y cuando
+    proporcionen un token de actualización válido.
+
+    El proceso es el siguiente:
+    1. Recibe un token de actualización (`refresh_token`) a través del cuerpo de la solicitud,
+       validado por el esquema `schemas.TokenRefresh`.
+    2. Llama a `service.verify_refresh_token` para validar el token de actualización.
+       Esto verifica su firma, expiración y tipo.
+    3. Si el token de actualización es válido, extrae el 'subject' (email del usuario)
+       del payload del token.
+    4. Busca al usuario en la base de datos utilizando `user_service.get_user_by_email`.
+    5. Si el usuario se encuentra y está activo, genera un nuevo token de acceso JWT
+       utilizando `service.create_access_token`.
+    6. Devuelve el nuevo token de acceso y el tipo de token ("bearer").
+
     Args:
-        token_data: Datos del token de actualización.
-        db: Sesión de base de datos.
-        
+        token_data (schemas.TokenRefresh): Un objeto que contiene el `refresh_token` (str).
+        db (AsyncSession, optional): La sesión de base de datos asíncrona, inyectada
+                                     por FastAPI. Defaults to Depends(get_db).
+
     Returns:
-        Nuevo token de acceso.
-        
+        Token: Un objeto que contiene el nuevo `access_token` JWT y `token_type` ("bearer").
+               Se valida contra el esquema `Token`.
+
     Raises:
-        HTTPException: Si el refresh token es inválido o ha expirado.
+        HTTPException (401 Unauthorized): Si el token de actualización es inválido,
+                                          ha expirado, está malformado, o si el usuario
+                                          asociado no se encuentra, no está activo,
+                                          o si el token no es del tipo 'refresh'.
+                                          Incluye un encabezado `WWW-Authenticate: Bearer`.
+        HTTPException (500 Internal Server Error): Si ocurre un error inesperado durante
+                                                   el proceso, como un problema de
+                                                   conexión con la base de datos.
     """
     try:
-        # Verificar el refresh token
-        email = service.verify_refresh_token(token_data.refresh_token)
-        if not email:
-            raise AuthenticationError("Token de actualización inválido o expirado")
-            
-        # Obtener el usuario
-        user = await service.get_user_by_email(db, email)
-        if not user:
-            raise AuthenticationError("Usuario no encontrado")
-            
+        # Verificar el refresh token. service.verify_refresh_token returns TokenData
+        token_payload = service.verify_refresh_token(token_data.refresh_token)
+        if not token_payload or not token_payload.sub:
+            raise auth_errors.InvalidTokenError("Token de actualización inválido o malformado")
+
+        email_from_token = token_payload.sub
+
+        # Obtener el usuario usando user_service
+        user_result = await user_service.get_user_by_email(db, email_from_token)
+        if user_result.is_failure():
+            error = user_result.error()
+            if isinstance(error, UsersUserNotFoundError):
+                raise auth_errors.InvalidTokenError("Usuario asociado al token no encontrado.")
+            else: # DatabaseError
+                raise DatabaseError("Error de base de datos al buscar usuario para refrescar token.")
+        
+        user: User = user_result.unwrap()
+
         # Generar nuevo access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = service.create_access_token(
+        new_access_token = service.create_access_token(
             data={"sub": user.email}, expires_delta=access_token_expires
         )
-        
+
         return Token(
-            access_token=access_token,
+            access_token=new_access_token,
             token_type="bearer",
-            user=user,
+            # Token schema does not include 'user' field
         )
-    except AuthenticationError as e:
+    except auth_errors.InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except DatabaseError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error de base de datos durante la renovación del token.",
+        )
+
 
 @router.post(
     "/password-recovery/{email}",
@@ -169,21 +267,46 @@ async def recover_password(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Inicia el proceso de recuperación de contraseña.
-    
+    Inicia el proceso de recuperación de contraseña para un usuario.
+
+    Este endpoint permite a un usuario solicitar un restablecimiento de contraseña.
+    El proceso es el siguiente:
+    1. Recibe la dirección de correo electrónico del usuario (`email_data.email`)
+       validada por el esquema `schemas.EmailSchema`.
+    2. Llama al servicio `auth_service.send_password_reset_email`. Este servicio:
+        a. Busca al usuario por el correo electrónico.
+        b. Si el usuario existe, genera un token de restablecimiento de contraseña.
+        c. Envía un correo electrónico al usuario con un enlace que contiene este token.
+    3. Devuelve un mensaje genérico indicando que, si la cuenta existe, se ha enviado
+       un correo. Esto se hace para no revelar si un correo electrónico está o no
+       registrado en el sistema.
+
     Args:
-        email: Correo electrónico del usuario.
-        db: Sesión de base de datos.
-        
+        email_data (schemas.EmailSchema): Un objeto que contiene el `email` del usuario
+                                          que solicita la recuperación de contraseña.
+        db (AsyncSession, optional): La sesión de base de datos asíncrona, inyectada
+                                     por FastAPI. Defaults to Depends(get_db).
+
     Returns:
-        Mensaje de confirmación.
+        schemas.Msg: Un objeto con un mensaje genérico de confirmación.
+
+    Raises:
+        HTTPException (500 Internal Server Error): Si ocurre un error inesperado durante
+                                                   el proceso, como un problema de
+                                                   conexión con la base de datos o un fallo
+                                                   al intentar enviar el correo electrónico.
     """
     try:
         await service.send_password_reset_email(db, email)
-        return {"message": "Si el correo existe, se ha enviado un enlace de recuperación"}
+        return {
+            "message": "Si el correo existe, se ha enviado un enlace de recuperación"
+        }
     except Exception as e:
         # No revelar si el correo existe o no por razones de seguridad
-        return {"message": "Si el correo existe, se ha enviado un enlace de recuperación"}
+        return {
+            "message": "Si el correo existe, se ha enviado un enlace de recuperación"
+        }
+
 
 @router.post(
     "/reset-password/",
@@ -192,26 +315,50 @@ async def recover_password(
     description="Restablece la contraseña usando un token de restablecimiento.",
 )
 async def reset_password(
-    reset_data: schemas.ResetPassword,
+    reset_data: schemas.ResetPasswordSchema, # Parametro reset_data
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Restablece la contraseña de un usuario.
-    
+    Restablece la contraseña de un usuario utilizando un token de restablecimiento.
+
+    Este endpoint permite a un usuario establecer una nueva contraseña después de
+    haber solicitado una recuperación de contraseña y haber recibido un token válido.
+
+    El proceso es el siguiente:
+    1. Recibe los datos para el restablecimiento, que incluyen el `token` de
+       restablecimiento y la `new_password`, validados por el esquema
+       `schemas.ResetPasswordSchema`.
+    2. Llama al servicio `auth_service.reset_password` con el token y la nueva contraseña.
+       Este servicio se encarga de:
+        a. Verificar la validez del token (no expirado, tipo correcto).
+        b. Encontrar al usuario asociado al token.
+        c. Hashear la nueva contraseña.
+        d. Actualizar la contraseña del usuario en la base de datos.
+        e. Invalidar el token de restablecimiento usado.
+    3. Si el restablecimiento es exitoso, devuelve un mensaje de confirmación.
+
     Args:
-        reset_data: Datos para el restablecimiento de contraseña.
-        db: Sesión de base de datos.
-        
+        reset_data (schemas.ResetPasswordSchema): Un objeto que contiene el `token` (str)
+                                                  de restablecimiento de contraseña y la
+                                                  `new_password` (str) para el usuario.
+        db (AsyncSession, optional): La sesión de base de datos asíncrona, inyectada
+                                     por FastAPI. Defaults to Depends(get_db).
+
     Returns:
-        Mensaje de confirmación.
-        
+        schemas.Msg: Un objeto con un mensaje de confirmación indicando que la
+                     contraseña ha sido restablecida exitosamente.
+
     Raises:
-        HTTPException: Si el token es inválido o ha expirado.
+        HTTPException (400 Bad Request): Si el token de restablecimiento es inválido,
+                                         ha expirado, está malformado, o si el usuario
+                                         asociado no se encuentra.
+        HTTPException (500 Internal Server Error): Si ocurre un error inesperado durante
+                                                   el proceso, como un problema de
+                                                   conexión con la base de datos o un
+                                                   fallo al actualizar la contraseña.
     """
     try:
-        await service.reset_password(
-            db, reset_data.token, reset_data.new_password
-        )
+        await service.reset_password(db, reset_data.token, reset_data.new_password)
         return {"message": "Contraseña actualizada correctamente"}
     except AuthenticationError as e:
         raise HTTPException(
