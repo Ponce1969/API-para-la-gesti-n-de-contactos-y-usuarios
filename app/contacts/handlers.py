@@ -5,15 +5,15 @@ Este módulo define los manejadores para las operaciones HTTP
 relacionadas con contactos y grupos de contactos.
 """
 
-from typing import Dict, List, Optional, Any, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_active_user
-from app.auth.models import User
+from app.users.models import User
 from app.common.database import get_db
-from app.common.pagination import PaginatedResponse, PaginationParams
+from app.common.schemas import PaginatedResponse, PaginationParams
 from app.contacts.errors import (
     ContactAlreadyExistsError,
     ContactAlreadyInGroupError,
@@ -340,7 +340,9 @@ async def create_contact_group(
                 detail="Error al crear el grupo de contactos",
             )
 
-    return cast(ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap()))
+    return cast(
+        ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap())
+    )
 
 
 @router.get(
@@ -430,7 +432,9 @@ async def get_contact_group(
                 detail="Error al obtener el grupo de contactos",
             )
 
-    return cast(ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap()))
+    return cast(
+        ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap())
+    )
 
 
 @router.put(
@@ -482,7 +486,9 @@ async def update_contact_group(
                 detail="Error al actualizar el grupo de contactos",
             )
 
-    return cast(ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap()))
+    return cast(
+        ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap())
+    )
 
 
 @router.delete(

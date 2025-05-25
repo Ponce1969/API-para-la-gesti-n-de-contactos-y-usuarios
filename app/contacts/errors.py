@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from app.common.errors import AppError, AppException
+from app.common.errors import AppError
+from fastapi import HTTPException as AppException
 
 
 # Errores generales
