@@ -7,6 +7,9 @@ de contactos y grupos de contactos en la aplicación.
 
 from . import errors, models, schemas
 
+# Importar enrutador para la API
+from .handlers import router as contact_router
+
 # Importar modelos
 from .models import Contact, ContactGroup, contact_group_members
 
@@ -14,31 +17,27 @@ from .models import Contact, ContactGroup, contact_group_members
 from .schemas import (
     ContactCreate,
     ContactGroupCreate,
+    ContactGroupListResponse,
     ContactGroupResponse,
     ContactGroupUpdate,
     ContactInDB,
+    ContactListResponse,
     ContactResponse,
     ContactUpdate,
-    ContactListResponse,
-    ContactGroupListResponse,
 )
 
 # Importar servicios
-from .service import ContactService, ContactGroupService
+from .service import ContactGroupService, ContactService
 
-# Importar enrutador para la API
-from .handlers import router as contact_router
 __all__ = [
     # Módulos
     "models",
     "schemas",
     "errors",
-    
     # Modelos
     "Contact",
     "ContactGroup",
     "contact_group_members",
-    
     # Esquemas
     "ContactCreate",
     "ContactUpdate",
@@ -49,11 +48,9 @@ __all__ = [
     "ContactGroupUpdate",
     "ContactGroupResponse",
     "ContactGroupListResponse",
-    
     # Servicios
     "ContactService",
     "ContactGroupService",
-    
     # Router
     "contact_router",
 ]
