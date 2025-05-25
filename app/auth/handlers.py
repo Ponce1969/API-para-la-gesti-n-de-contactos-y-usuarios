@@ -5,19 +5,21 @@ Este módulo define los endpoints de la API para autenticación, incluyendo
 login, registro, refresh token, verificación de email y reseteo de contraseña.
 """
 
-from datetime import timedelta
-from typing import Any, Dict
-
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import service as auth_service
 from app.auth.dependencies import get_current_active_user, get_current_user
 from app.auth.errors import handle_auth_error
-from app.auth.schemas import Token, TokenRefresh, PasswordResetRequest, ResetPasswordSchema
+from app.auth.schemas import (
+    PasswordResetRequest,
+    ResetPasswordSchema,
+    Token,
+    TokenRefresh,
+)
 from app.common.database import get_db
-from app.common.errors import AppError, handle_error
+from app.common.result import is_failure
 from app.users.models import User
 from app.users.schemas import UserCreate, UserResponse
 
@@ -27,9 +29,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=Token)
 async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
+    form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """
     Autentica a un usuario y genera un token de acceso JWT.
 
@@ -53,38 +54,38 @@ async def login_for_access_token(
         user = await auth_service.authenticate_user(
             db=db,
             email=form_data.username,  # El username del form es el email en nuestro caso
-            password=form_data.password
+            password=form_data.password,
         )
-        
+
         # Crear datos para el token (sub = email)
         token_data = {"sub": user.email}
-        
+
         # Crear token de acceso
         access_token_result = auth_service.create_access_token(data=token_data)
-        if access_token_result.is_failure():
+        if is_failure(access_token_result):
             error = access_token_result.failure()
             raise error
-        
+
         access_token = access_token_result.unwrap()
-        
+
         # Crear token de refresh
         refresh_token_result = auth_service.create_refresh_token(data=token_data)
-        if refresh_token_result.is_failure():
+        if is_failure(refresh_token_result):
             error = refresh_token_result.failure()
             raise error
-        
+
         refresh_token = refresh_token_result.unwrap()
-        
+
         # Actualizar la fecha de último login
         await auth_service.update_user_last_login(db, user)
-        
+
         # Devolver el token
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "refresh_token": refresh_token
+            "refresh_token": refresh_token,
         }
-    
+
     except auth_service.AuthenticationError as e:
         # Convertir el error de autenticación a HTTPException
         raise handle_auth_error(e)
@@ -92,15 +93,17 @@ async def login_for_access_token(
         # Manejar otros errores inesperados
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado: {str(e)}",
+            detail=f"Error inesperado: {e!s}",
         )
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
 async def register_user(
     user_data: UserCreate,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """
     Registra un nuevo usuario en el sistema.
@@ -122,33 +125,27 @@ async def register_user(
     try:
         # Registrar al usuario
         user = await auth_service.register_user(db, user_data)
-        
+
         # Enviar email de verificación en segundo plano
-        background_tasks.add_task(
-            auth_service.send_verification_email,
-            db,
-            user.email
-        )
-        
+        background_tasks.add_task(auth_service.send_verification_email, db, user.email)
+
         return user
-    
-    except auth_service.EmailAlreadyExistsError as e:
+
+    except auth_service.EmailAlreadyExistsError:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="El email ya está registrado"
+            status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado"
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al registrar usuario: {str(e)}"
+            detail=f"Error al registrar usuario: {e!s}",
         )
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    token_data: TokenRefresh,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
+    token_data: TokenRefresh, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """
     Refresca un token de acceso usando un token de refresh válido.
 
@@ -168,39 +165,34 @@ async def refresh_token(
         if token_data_result.is_failure():
             error = token_data_result.failure()
             raise error
-        
+
         token_payload = token_data_result.unwrap()
-        
+
         # Verificar que el usuario existe y está activo
         user_result = await auth_service.get_user_by_email(db, token_payload.sub)
         if user_result.is_failure():
             error = user_result.failure()
             raise error
-        
+
         user = user_result.unwrap()
         if not user.is_active:
             raise auth_service.InactiveUserError("La cuenta está inactiva")
-        
+
         # Crear nuevo token de acceso
-        access_token_result = auth_service.create_access_token(
-            data={"sub": user.email}
-        )
-        if access_token_result.is_failure():
+        access_token_result = auth_service.create_access_token(data={"sub": user.email})
+        if is_failure(access_token_result):
             error = access_token_result.failure()
             raise error
-        
+
         access_token = access_token_result.unwrap()
-        
+
         # Devolver el nuevo token
-        return {
-            "access_token": access_token,
-            "token_type": "bearer"
-        }
-    
+        return {"access_token": access_token, "token_type": "bearer"}
+
     except auth_service.InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token de refresh inválido: {str(e)}",
+            detail=f"Token de refresh inválido: {e!s}",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except auth_service.AuthenticationError as e:
@@ -208,7 +200,7 @@ async def refresh_token(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al refrescar token: {str(e)}",
+            detail=f"Error al refrescar token: {e!s}",
         )
 
 
@@ -216,8 +208,8 @@ async def refresh_token(
 async def recover_password(
     request: PasswordResetRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
     """
     Inicia el proceso de recuperación de contraseña para un usuario.
 
@@ -239,23 +231,24 @@ async def recover_password(
         # Enviar correo de recuperación en segundo plano
         # No revelamos si el email existe o no por seguridad
         background_tasks.add_task(
-            auth_service.send_password_reset_email,
-            db,
-            request.email
+            auth_service.send_password_reset_email, db, request.email
         )
-        
-        return {"message": "Si el email existe, se ha enviado un correo con instrucciones para restablecer la contraseña"}
-    
-    except Exception as e:
+
+        return {
+            "message": "Si el email existe, se ha enviado un correo con instrucciones para restablecer la contraseña"
+        }
+
+    except Exception:
         # No revelamos detalles específicos por seguridad
-        return {"message": "Si el email existe, se ha enviado un correo con instrucciones para restablecer la contraseña"}
+        return {
+            "message": "Si el email existe, se ha enviado un correo con instrucciones para restablecer la contraseña"
+        }
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
 async def reset_password(
-    reset_data: ResetPasswordSchema,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
+    reset_data: ResetPasswordSchema, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """
     Restablece la contraseña de un usuario usando un token de reseteo.
 
@@ -271,36 +264,30 @@ async def reset_password(
     """
     try:
         # Restablecer la contraseña
-        await auth_service.reset_password(
-            db,
-            reset_data.token,
-            reset_data.new_password
-        )
-        
+        await auth_service.reset_password(db, reset_data.token, reset_data.new_password)
+
         return {"message": "Contraseña restablecida con éxito"}
-    
-    except auth_service.InvalidTokenError as e:
+
+    except auth_service.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El enlace de restablecimiento no es válido o ha expirado"
+            detail="El enlace de restablecimiento no es válido o ha expirado",
         )
-    except auth_service.ResourceNotFoundError as e:
+    except auth_service.ResourceNotFoundError:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario no encontrado"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado"
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al restablecer contraseña: {str(e)}"
+            detail=f"Error al restablecer contraseña: {e!s}",
         )
 
 
 @router.post("/verify-email/{token}", status_code=status.HTTP_200_OK)
 async def verify_email(
-    token: str,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
+    token: str, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """
     Verifica el correo electrónico de un usuario usando un token de verificación.
 
@@ -317,31 +304,29 @@ async def verify_email(
     try:
         # Verificar el email
         await auth_service.verify_email_token(db, token)
-        
+
         return {"message": "Correo electrónico verificado con éxito"}
-    
-    except auth_service.InvalidTokenError as e:
+
+    except auth_service.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El enlace de verificación no es válido o ha expirado"
+            detail="El enlace de verificación no es válido o ha expirado",
         )
-    except auth_service.ResourceNotFoundError as e:
+    except auth_service.ResourceNotFoundError:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario no encontrado"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado"
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al verificar email: {str(e)}"
+            detail=f"Error al verificar email: {e!s}",
         )
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-) -> Dict[str, str]:
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> dict[str, str]:
     """
     Cierra la sesión del usuario actual revocando su token de acceso.
 
@@ -359,13 +344,13 @@ async def logout(
         # La lógica para revocar el token iría aquí
         # Si se usa JWT con lista negra, se agregaría el token a la lista negra
         # En la implementación actual, solo devolvemos un mensaje de éxito
-        
+
         return {"message": "Sesión cerrada con éxito"}
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al cerrar sesión: {str(e)}"
+            detail=f"Error al cerrar sesión: {e!s}",
         )
 
 

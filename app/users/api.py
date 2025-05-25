@@ -5,18 +5,23 @@ Este módulo define los endpoints para operaciones CRUD de usuarios,
 incluyendo creación, lectura, actualización y desactivación de cuentas.
 """
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.database import get_db
-from app.common.errors import DatabaseError, ResourceNotFoundError
+from app.common.errors import DatabaseError
+from app.common.result import is_failure
 
 from . import schemas
-from .service import UserService
+from .errors import (
+    TokenInvalidError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+    VerificationTokenNotFoundError,
+)
 from .repository import UserRepository
-from .errors import UserAlreadyExistsError, UserNotFoundError, VerificationTokenNotFoundError, TokenInvalidError
+from .service import UserService
+
 # from .models import User # Models are typically handled by service/repository layers
 
 router = APIRouter()
@@ -48,32 +53,30 @@ async def create_user(
     """
     user_repo = UserRepository(db)
     user_service = UserService(user_repo)
-    
+
     result = await user_service.register_new_user(user_data)
-    
-    if result.is_failure():
-        error = result.error()
+
+    from app.common.result import is_failure
+
+    if is_failure(result):
+        error = result.failure()
         if isinstance(error, UserAlreadyExistsError):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(error),
             )
         elif isinstance(error, DatabaseError):
-            # Log error internally for more details if needed
-            # logger.error(f"Database error during user registration: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error en la base de datos al procesar el registro.",
             )
         else:
-            # Log error internally for more details if needed
-            # logger.error(f"Unexpected error during user registration: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error inesperado al procesar el registro.",
             )
-    
-    created_user_in_db = result.value
+
+    created_user_in_db = result.unwrap()
     return schemas.UserResponse.model_validate(created_user_in_db)
 
 
@@ -105,33 +108,31 @@ async def get_user(
 
     result = await user_service.get_user_by_id(user_id)
 
-    if result.is_failure():
-        error = result.error()
+    if is_failure(result):
+        error = result.failure()
         if isinstance(error, UserNotFoundError):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(error),
             )
         elif isinstance(error, DatabaseError):
-            # logger.error(f"Database error al obtener usuario {user_id}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error en la base de datos al obtener el usuario.",
             )
         else:
-            # logger.error(f"Error inesperado al obtener usuario {user_id}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error inesperado al obtener el usuario.",
             )
 
-    user_in_db = result.value
+    user_in_db = result.unwrap()
     return schemas.UserResponse.model_validate(user_in_db)
 
 
 @router.get(
     "/",
-    response_model=List[schemas.UserResponse],
+    response_model=list[schemas.UserResponse],
     summary="Listar usuarios",
     description="Obtiene una lista paginada de todos los usuarios registrados.",
 )
@@ -139,7 +140,7 @@ async def list_users(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-) -> List[schemas.UserResponse]:
+) -> list[schemas.UserResponse]:
     """
     Obtiene una lista de usuarios con paginación.
 
@@ -159,15 +160,20 @@ async def list_users(
 
     result = await user_service.get_users_list(skip=skip, limit=limit)
 
-    if result.is_failure():
-        error = result.error() # Debería ser DatabaseError
-        # logger.error(f"Database error al listar usuarios: {error}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error en la base de datos al listar usuarios.",
-        )
+    if is_failure(result):
+        error = result.failure()
+        if isinstance(error, DatabaseError):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error en la base de datos al listar usuarios.",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error inesperado al listar usuarios.",
+            )
 
-    users_in_db_list = result.value
+    users_in_db_list = result.unwrap()
     return [schemas.UserResponse.model_validate(user) for user in users_in_db_list]
 
 
@@ -199,10 +205,12 @@ async def update_user(
     user_repo = UserRepository(db)
     user_service = UserService(user_repo)
 
-    result = await user_service.update_existing_user(user_id=user_id, user_update_data=user_data)
+    result = await user_service.update_existing_user(
+        user_id=user_id, user_update_data=user_data
+    )
 
-    if result.is_failure():
-        error = result.error()
+    if is_failure(result):
+        error = result.failure()
         if isinstance(error, UserNotFoundError):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -210,23 +218,21 @@ async def update_user(
             )
         elif isinstance(error, UserAlreadyExistsError):
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, # Email conflict
+                status_code=status.HTTP_409_CONFLICT,
                 detail=str(error),
             )
         elif isinstance(error, DatabaseError):
-            # logger.error(f"Database error al actualizar usuario {user_id}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error en la base de datos al actualizar el usuario.",
             )
         else:
-            # logger.error(f"Error inesperado al actualizar usuario {user_id}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error inesperado al actualizar el usuario.",
             )
 
-    updated_user_in_db = result.value
+    updated_user_in_db = result.unwrap()
     return schemas.UserResponse.model_validate(updated_user_in_db)
 
 
@@ -255,28 +261,26 @@ async def delete_user(
 
     result = await user_service.delete_user_by_id(user_id=user_id)
 
-    if result.is_failure():
-        error = result.error()
+    if is_failure(result):
+        error = result.failure()
         if isinstance(error, UserNotFoundError):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(error),
             )
         elif isinstance(error, DatabaseError):
-            # logger.error(f"Database error al eliminar usuario {user_id}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error en la base de datos al eliminar el usuario.",
             )
         else:
-            # logger.error(f"Error inesperado al eliminar usuario {user_id}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error inesperado al eliminar el usuario.",
             )
-    
+
     # Si llegamos aquí, la operación fue exitosa y no se devuelve contenido.
-    return
+    return None
 
 
 @router.get(
@@ -284,11 +288,11 @@ async def delete_user(
     response_model=schemas.UserResponse,
     summary="Verificar dirección de correo electrónico",
     description="Verifica la dirección de correo electrónico de un usuario utilizando un token. "
-                "El token se espera como un parámetro de consulta (?token=valor_del_token).",
-    tags=["auth", "users"], # Añadir tags para agrupar en la documentación de la API
+    "El token se espera como un parámetro de consulta (?token=valor_del_token).",
+    tags=["auth", "users"],  # Añadir tags para agrupar en la documentación de la API
 )
 async def verify_email_with_token(
-    token: str, # FastAPI obtendrá esto de los parámetros de consulta
+    token: str,
     db: AsyncSession = Depends(get_db),
 ) -> schemas.UserResponse:
     """
@@ -311,8 +315,7 @@ async def verify_email_with_token(
     expected_token_type = "email_verification"
 
     result = await user_service.use_verification_token(
-        token_value=token,
-        expected_token_type=expected_token_type
+        token_value=token, expected_token_type=expected_token_type
     )
 
     if result.is_failure():
@@ -320,14 +323,14 @@ async def verify_email_with_token(
         if isinstance(error, VerificationTokenNotFoundError):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Token de verificación no encontrado o ya utilizado.", # Mensaje genérico por seguridad
+                detail="Token de verificación no encontrado o ya utilizado.",  # Mensaje genérico por seguridad
             )
         elif isinstance(error, TokenInvalidError):
             # Podríamos loguear error.reason internamente para más detalles
             # logger.warning(f"Intento de uso de token inválido: {token}. Razón: {error.reason}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Token inválido o expirado.", # Mensaje genérico por seguridad
+                detail="Token inválido o expirado.",  # Mensaje genérico por seguridad
             )
         elif isinstance(error, UserNotFoundError):
             # Este caso es menos probable si el token es válido y está correctamente vinculado.
@@ -342,13 +345,12 @@ async def verify_email_with_token(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error interno del servidor al procesar el token.",
             )
-        else: # Captura genérica para otros AppError
+        else:  # Captura genérica para otros AppError
             # logger.error(f"Error inesperado al verificar token {token}: {error}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error inesperado al procesar la verificación.",
             )
-    
+
     updated_user_in_db = result.value
     return schemas.UserResponse.model_validate(updated_user_in_db)
-

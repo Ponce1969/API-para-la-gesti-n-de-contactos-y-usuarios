@@ -6,7 +6,6 @@ renovación de tokens y recuperación de contraseñas.
 """
 
 from datetime import timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -14,16 +13,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.config import settings
 from app.common.database import get_db
-# Import specific errors from common.errors, AuthenticationError is not defined there
-from app.common.errors import DatabaseError, ResourceNotFoundError # Assuming ResourceNotFoundError might be useful
 
+# Import specific errors from common.errors, AuthenticationError is not defined there
+from app.common.errors import (  # Assuming ResourceNotFoundError might be useful
+    DatabaseError,
+)
+from app.users import service as user_service  # Import user service
+from app.users.errors import (
+    UserNotFoundError as UsersUserNotFoundError,  # Specific user not found from user service
+)
+from app.users.models import User  # User model is in the users slice
+from app.users.schemas import (  # User schemas are in the users slice
+    UserCreate,
+    UserResponse,
+)
+
+from . import errors as auth_errors  # Import auth specific errors
 from . import schemas, service
-from . import errors as auth_errors # Import auth specific errors
-from app.users import service as user_service # Import user service
-from app.users.models import User # User model is in the users slice
-from .schemas import Token # Token schema is local to auth
-from app.users.schemas import UserCreate, UserResponse # User schemas are in the users slice
-from app.users.errors import UserNotFoundError as UsersUserNotFoundError # Specific user not found from user service
+from .schemas import Token  # Token schema is local to auth
 
 router = APIRouter()
 
@@ -37,7 +44,7 @@ router = APIRouter()
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
-) -> Token:
+) -> schemas.Token:
     """
     Autentica a un usuario y devuelve un token de acceso JWT.
 
@@ -89,13 +96,17 @@ async def login_for_access_token(
             token_type="bearer",
             # Token schema does not include 'user' field
         )
-    except (auth_errors.InvalidCredentialsError, auth_errors.InactiveUserError, auth_errors.UnverifiedAccountError) as e:
+    except (
+        auth_errors.InvalidCredentialsError,
+        auth_errors.InactiveUserError,
+        auth_errors.UnverifiedAccountError,
+    ) as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e), # Use the message from the specific auth error
+            detail=str(e),  # Use the message from the specific auth error
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except DatabaseError as e:
+    except DatabaseError:
         # Handle potential database errors during authentication if any
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -113,7 +124,7 @@ async def login_for_access_token(
 async def register_user(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db),
-) -> Any:
+) -> UserResponse:
     """
     Registra un nuevo usuario en el sistema.
 
@@ -152,13 +163,13 @@ async def register_user(
         # Assuming service.register_user returns a User model (SQLAlchemy)
         # and UserResponse is compatible or this endpoint should return User (SQLAlchemy model)
         # For now, let's assume UserResponse can be created from the User model if needed by FastAPI
-        return user 
+        return user
     except auth_errors.EmailAlreadyExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e), # Use the message from the specific auth error
+            detail=str(e),  # Use the message from the specific auth error
         )
-    except DatabaseError as e:
+    except DatabaseError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al crear el usuario.",
@@ -174,7 +185,7 @@ async def register_user(
 async def refresh_token(
     token_data: schemas.TokenRefresh,
     db: AsyncSession = Depends(get_db),
-) -> Token:
+) -> schemas.Token:
     """
     Renueva un token de acceso utilizando un token de actualización (refresh token).
 
@@ -217,7 +228,9 @@ async def refresh_token(
         # Verificar el refresh token. service.verify_refresh_token returns TokenData
         token_payload = service.verify_refresh_token(token_data.refresh_token)
         if not token_payload or not token_payload.sub:
-            raise auth_errors.InvalidTokenError("Token de actualización inválido o malformado")
+            raise auth_errors.InvalidTokenError(
+                "Token de actualización inválido o malformado"
+            )
 
         email_from_token = token_payload.sub
 
@@ -226,10 +239,14 @@ async def refresh_token(
         if user_result.is_failure():
             error = user_result.error()
             if isinstance(error, UsersUserNotFoundError):
-                raise auth_errors.InvalidTokenError("Usuario asociado al token no encontrado.")
-            else: # DatabaseError
-                raise DatabaseError("Error de base de datos al buscar usuario para refrescar token.")
-        
+                raise auth_errors.InvalidTokenError(
+                    "Usuario asociado al token no encontrado."
+                )
+            else:  # DatabaseError
+                raise DatabaseError(
+                    "Error de base de datos al buscar usuario para refrescar token."
+                )
+
         user: User = user_result.unwrap()
 
         # Generar nuevo access token
@@ -249,7 +266,7 @@ async def refresh_token(
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except DatabaseError as e:
+    except DatabaseError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error de base de datos durante la renovación del token.",
@@ -265,7 +282,7 @@ async def refresh_token(
 async def recover_password(
     email: str,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> schemas.Msg:
     """
     Inicia el proceso de recuperación de contraseña para un usuario.
 
@@ -301,7 +318,7 @@ async def recover_password(
         return {
             "message": "Si el correo existe, se ha enviado un enlace de recuperación"
         }
-    except Exception as e:
+    except Exception:
         # No revelar si el correo existe o no por razones de seguridad
         return {
             "message": "Si el correo existe, se ha enviado un enlace de recuperación"
@@ -315,9 +332,9 @@ async def recover_password(
     description="Restablece la contraseña usando un token de restablecimiento.",
 )
 async def reset_password(
-    reset_data: schemas.ResetPasswordSchema, # Parametro reset_data
+    reset_data: schemas.ResetPasswordSchema,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> schemas.Msg:
     """
     Restablece la contraseña de un usuario utilizando un token de restablecimiento.
 

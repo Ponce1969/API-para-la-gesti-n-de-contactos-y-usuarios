@@ -73,17 +73,19 @@ async def health_check():
 # Usar el sistema moderno de eventos lifespan
 from contextlib import asynccontextmanager
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Código que se ejecuta al inicio de la aplicación
     logger.info("Iniciando la aplicación...")
     # Aquí podrías inicializar conexiones a bases de datos, etc.
-    
+
     yield  # Aquí se ejecuta la aplicación
-    
+
     # Código que se ejecuta al apagado de la aplicación
     logger.info("Apagando la aplicación...")
     # Aquí podrías cerrar conexiones a bases de datos, etc.
+
 
 # Actualizamos la app para usar el lifespan
 app.router.lifespan_context = lifespan
@@ -93,12 +95,12 @@ app.router.lifespan_context = lifespan
 if settings.MCP_ENABLED:
     try:
         from fastapi_mcp import FastApiMCP
-        
+
         logger.info("Configurando servidor MCP para integración con IA...")
-        
+
         # Versión simplificada sin autenticación para prueba inicial
         mcp = FastApiMCP(app)
-        
+
         # Montar el servidor MCP en la aplicación FastAPI
         mcp.mount()
         logger.info("Servidor MCP configurado y montado correctamente")

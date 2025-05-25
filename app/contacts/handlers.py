@@ -5,15 +5,13 @@ Este módulo define los manejadores para las operaciones HTTP
 relacionadas con contactos y grupos de contactos.
 """
 
-from typing import Any, Dict, List, Optional, Union, cast
-
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_active_user
-from app.users.models import User
 from app.common.database import get_db
-from app.common.schemas import PaginatedResponse, PaginationParams
+from app.common.result import is_failure
+from app.common.schemas import PaginationParams
 from app.contacts.errors import (
     ContactAlreadyExistsError,
     ContactAlreadyInGroupError,
@@ -23,11 +21,9 @@ from app.contacts.errors import (
     ContactNotFoundError,
     ContactNotInGroupError,
     ContactValidationError,
-    DatabaseError,
     UnauthorizedContactAccessError,
     UnauthorizedGroupAccessError,
 )
-from app.contacts.models import Contact, ContactGroup
 from app.contacts.schemas import (
     ContactCreate,
     ContactGroupCreate,
@@ -39,6 +35,7 @@ from app.contacts.schemas import (
     ContactUpdate,
 )
 from app.contacts.service import ContactGroupService, ContactService
+from app.users.models import User
 
 # Crear el router
 router = APIRouter()
@@ -73,7 +70,7 @@ async def create_contact(
     """
     result = await ContactService.create_contact(db, current_user.id, contact_data)
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, ContactAlreadyExistsError):
             raise HTTPException(
@@ -91,7 +88,7 @@ async def create_contact(
                 detail="Error al crear el contacto",
             )
 
-    return cast(ContactResponse, ContactResponse.model_validate(result.unwrap()))
+    return ContactResponse.model_validate(result.unwrap())
 
 
 @router.get(
@@ -102,8 +99,8 @@ async def create_contact(
 )
 async def list_contacts(
     pagination: PaginationParams = Depends(),
-    search: Optional[str] = Query(None, description="Término de búsqueda"),
-    group_id: Optional[int] = Query(
+    search: str | None = Query(None, description="Término de búsqueda"),
+    group_id: int | None = Query(
         None, description="ID del grupo para filtrar contactos"
     ),
     current_user: User = Depends(get_current_active_user),
@@ -134,12 +131,12 @@ async def list_contacts(
         group_id=group_id,
     )
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactGroupNotFoundError, UnauthorizedGroupAccessError)):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Grupo no encontrado o no tienes permisos para acceder a él",
+                detail="Grupo no encontrado o no tienes permisos para acceder a él",
             )
         else:
             raise HTTPException(
@@ -184,7 +181,7 @@ async def get_contact(
     """
     result = await ContactService.get_contact_by_id(db, contact_id, current_user.id)
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactNotFoundError, UnauthorizedContactAccessError)):
             raise HTTPException(
@@ -197,7 +194,7 @@ async def get_contact(
                 detail="Error al obtener el contacto",
             )
 
-    return cast(ContactResponse, ContactResponse.model_validate(result.unwrap()))
+    return ContactResponse.model_validate(result.unwrap())
 
 
 @router.put(
@@ -231,7 +228,7 @@ async def update_contact(
         db, contact_id, current_user.id, contact_data
     )
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactNotFoundError, UnauthorizedContactAccessError)):
             raise HTTPException(
@@ -249,7 +246,7 @@ async def update_contact(
                 detail="Error al actualizar el contacto",
             )
 
-    return cast(ContactResponse, ContactResponse.model_validate(result.unwrap()))
+    return ContactResponse.model_validate(result.unwrap())
 
 
 @router.delete(
@@ -279,7 +276,7 @@ async def delete_contact(
     """
     result = await ContactService.delete_contact(db, contact_id, current_user.id)
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactNotFoundError, UnauthorizedContactAccessError)):
             raise HTTPException(
@@ -322,7 +319,7 @@ async def create_contact_group(
     """
     result = await ContactGroupService.create_group(db, current_user.id, group_data)
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, ContactGroupAlreadyExistsError):
             raise HTTPException(
@@ -340,9 +337,7 @@ async def create_contact_group(
                 detail="Error al crear el grupo de contactos",
             )
 
-    return cast(
-        ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap())
-    )
+    return ContactGroupResponse.model_validate(result.unwrap())
 
 
 @router.get(
@@ -353,7 +348,7 @@ async def create_contact_group(
 )
 async def list_contact_groups(
     pagination: PaginationParams = Depends(),
-    search: Optional[str] = Query(None, description="Término de búsqueda"),
+    search: str | None = Query(None, description="Término de búsqueda"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> ContactGroupListResponse:
@@ -419,7 +414,7 @@ async def get_contact_group(
     """
     result = await ContactGroupService.get_group_by_id(db, group_id, current_user.id)
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactGroupNotFoundError, UnauthorizedGroupAccessError)):
             raise HTTPException(
@@ -432,9 +427,7 @@ async def get_contact_group(
                 detail="Error al obtener el grupo de contactos",
             )
 
-    return cast(
-        ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap())
-    )
+    return ContactGroupResponse.model_validate(result.unwrap())
 
 
 @router.put(
@@ -468,7 +461,7 @@ async def update_contact_group(
         db, group_id, current_user.id, group_data
     )
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactGroupNotFoundError, UnauthorizedGroupAccessError)):
             raise HTTPException(
@@ -486,9 +479,7 @@ async def update_contact_group(
                 detail="Error al actualizar el grupo de contactos",
             )
 
-    return cast(
-        ContactGroupResponse, ContactGroupResponse.model_validate(result.unwrap())
-    )
+    return ContactGroupResponse.model_validate(result.unwrap())
 
 
 @router.delete(
@@ -518,7 +509,7 @@ async def delete_contact_group(
     """
     result = await ContactGroupService.delete_group(db, group_id, current_user.id)
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(error, (ContactGroupNotFoundError, UnauthorizedGroupAccessError)):
             raise HTTPException(
@@ -544,7 +535,7 @@ async def add_contact_to_group(
     contact_id: int = Path(..., description="ID del contacto a añadir"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Añade un contacto existente a un grupo de contactos.
 
@@ -565,7 +556,7 @@ async def add_contact_to_group(
         db, contact_id, group_id, current_user.id
     )
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(
             error,
@@ -605,7 +596,7 @@ async def remove_contact_from_group(
     contact_id: int = Path(..., description="ID del contacto a eliminar"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Elimina un contacto de un grupo de contactos.
 
@@ -626,7 +617,7 @@ async def remove_contact_from_group(
         db, contact_id, group_id, current_user.id
     )
 
-    if result.is_failure():
+    if is_failure(result):
         error = result.failure()
         if isinstance(
             error,

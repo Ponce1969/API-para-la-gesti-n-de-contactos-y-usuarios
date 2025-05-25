@@ -5,7 +5,7 @@ Este módulo define los esquemas base para las respuestas de la API,
 incluyendo manejo de paginación y respuestas estándar.
 """
 
-from typing import Any, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
 from pydantic.generics import GenericModel
@@ -25,12 +25,14 @@ class BaseResponse(BaseModel):
         error: Detalles del error (opcional)
     """
 
-    success: bool = Field(True, description="Indica si la operación fue exitosa")
-    message: Optional[str] = Field(
-        None, description="Mensaje descriptivo de la operación"
+    success: bool = Field(
+        ..., default=True, description="Indica si la operación fue exitosa"
     )
-    data: Optional[Any] = Field(None, description="Datos de la respuesta")
-    error: Optional[dict] = Field(None, description="Detalles del error")
+    message: str | None = Field(
+        ..., default=None, description="Mensaje descriptivo de la operación"
+    )
+    data: Any | None = Field(..., default=None, description="Datos de la respuesta")
+    error: dict | None = Field(..., default=None, description="Detalles del error")
 
     class Config:
         json_schema_extra = {
@@ -52,13 +54,11 @@ class PaginationParams(BaseModel):
         size: Tamaño de la página (elementos por página)
     """
 
-    page: int = Field(0, ge=0, description="Número de página (empieza en 0)")
-    size: int = Field(100, gt=0, le=1000, description="Tamaño de la página")
+    page: int = Field(default=0, ge=0, description="Número de página (empieza en 0)")
+    size: int = Field(default=100, gt=0, le=1000, description="Tamaño de la página")
 
     class Config:
-        json_schema_extra = {
-            "example": {"page": 0, "size": 100}
-        }
+        json_schema_extra = {"example": {"page": 0, "size": 100}}
 
 
 class PaginatedResponse(GenericModel, Generic[T]):
@@ -73,11 +73,13 @@ class PaginatedResponse(GenericModel, Generic[T]):
         pages: Número total de páginas
     """
 
-    items: List[T] = Field(..., description="Lista de elementos en la página actual")
-    total: int = Field(..., description="Número total de elementos")
-    page: int = Field(..., description="Número de página actual")
-    size: int = Field(..., description="Tamaño de la página")
-    pages: int = Field(..., description="Número total de páginas")
+    items: list[T] = Field(
+        default=..., description="Lista de elementos en la página actual"
+    )
+    total: int = Field(default=..., description="Número total de elementos")
+    page: int = Field(default=..., description="Número de página actual")
+    size: int = Field(default=..., description="Tamaño de la página")
+    pages: int = Field(default=..., description="Número total de páginas")
 
     class Config:
         json_schema_extra = {
@@ -95,9 +97,11 @@ class ErrorResponse(BaseResponse):
         details: Detalles adicionales del error
     """
 
-    status_code: int = Field(..., description="Código de estado HTTP")
-    error: str = Field(..., description="Tipo de error")
-    details: Optional[dict] = Field(None, description="Detalles adicionales del error")
+    status_code: int = Field(default=..., description="Código de estado HTTP")
+    error: str = Field(default=..., description="Tipo de error")
+    details: dict | None = Field(
+        default=None, description="Detalles adicionales del error"
+    )
 
     class Config:
         json_schema_extra = {
@@ -119,7 +123,7 @@ class SuccessResponse(BaseResponse):
         data: Datos de la respuesta
     """
 
-    data: Any = Field(..., description="Datos de la respuesta")
+    data: Any = Field(default=..., description="Datos de la respuesta")
 
     class Config:
         json_schema_extra = {
@@ -135,7 +139,7 @@ class MessageResponse(BaseResponse):
         message: Mensaje descriptivo
     """
 
-    message: str = Field(..., description="Mensaje descriptivo")
+    message: str = Field(default=..., description="Mensaje descriptivo")
 
     class Config:
         json_schema_extra = {

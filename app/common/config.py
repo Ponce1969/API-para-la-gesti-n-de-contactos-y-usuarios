@@ -5,7 +5,7 @@ desde variables de entorno, con valores por defecto y tipos fuertes.
 """
 
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from pydantic import AnyHttpUrl, EmailStr, Field, field_validator, model_validator
 from pydantic.networks import PostgresDsn
@@ -22,7 +22,6 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
-        env_prefix="APP_",
         env_nested_delimiter="__",
     )
     # ======================
@@ -35,11 +34,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # Dominios permitidos para CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]  # Frontend por defecto
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]  # Frontend por defecto
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def validate_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+    def validate_cors_origins(cls, v: str | list[str]) -> list[str]:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
@@ -90,29 +89,29 @@ class Settings(BaseSettings):
         True, env="APP_SMTP_TLS", description="Habilita TLS para conexiones SMTP"
     )
 
-    SMTP_PORT: Optional[int] = Field(
+    SMTP_PORT: int | None = Field(
         None, env="APP_SMTP_PORT", description="Puerto del servidor SMTP"
     )
 
-    SMTP_HOST: Optional[str] = Field(
+    SMTP_HOST: str | None = Field(
         None, env="APP_SMTP_HOST", description="Servidor SMTP para envío de correos"
     )
 
-    SMTP_USER: Optional[str] = Field(
+    SMTP_USER: str | None = Field(
         None, env="APP_SMTP_USER", description="Usuario para autenticación SMTP"
     )
 
-    SMTP_PASSWORD: Optional[str] = Field(
+    SMTP_PASSWORD: str | None = Field(
         None, env="APP_SMTP_PASSWORD", description="Contraseña para autenticación SMTP"
     )
 
-    EMAILS_FROM_EMAIL: Optional[EmailStr] = Field(
+    EMAILS_FROM_EMAIL: EmailStr | None = Field(
         None,
         env="APP_EMAILS_FROM_EMAIL",
         description="Dirección de correo del remitente por defecto",
     )
 
-    EMAILS_FROM_NAME: Optional[str] = Field(
+    EMAILS_FROM_NAME: str | None = Field(
         None, env="APP_EMAILS_FROM_NAME", description="Nombre del remitente por defecto"
     )
 
@@ -147,18 +146,18 @@ class Settings(BaseSettings):
         env="APP_RATE_LIMIT",
         description="Número máximo de peticiones por minuto por IP",
     )
-    
+
     # ======================
     # Configuración de MCP (Model Context Protocol)
     # ======================
     MCP_ENABLED: bool = Field(
-        False,
+        default=False,
         env="APP_MCP_ENABLED",
         description="Habilitar servidor MCP para integración con IA",
     )
-    
+
     MCP_API_KEY: str = Field(
-        "e5sGnoBF81qW40JqU2Pl8GS2ioZnUHgxBUbrGWd82nw",  # Debe cambiarse en producción
+        default="e5sGnoBF81qW40JqU2Pl8GS2ioZnUHgxBUbrGWd82nw",  # Debe cambiarse en producción
         env="APP_MCP_API_KEY",
         description="Clave API para que sistemas de IA se autentiquen con el servidor MCP",
     )
@@ -166,13 +165,13 @@ class Settings(BaseSettings):
     # ======================
     # Configuraciones de desarrollo
     # ======================
-    FIRST_SUPERUSER_EMAIL: Optional[EmailStr] = Field(
+    FIRST_SUPERUSER_EMAIL: EmailStr | None = Field(
         None,
         env="APP_FIRST_SUPERUSER_EMAIL",
         description="Email del primer superusuario (solo desarrollo)",
     )
 
-    FIRST_SUPERUSER_PASSWORD: Optional[str] = Field(
+    FIRST_SUPERUSER_PASSWORD: str | None = Field(
         None,
         env="APP_FIRST_SUPERUSER_PASSWORD",
         description="Contraseña del primer superusuario (solo desarrollo)",
@@ -180,9 +179,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def assemble_db_connection(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def assemble_db_connection(cls, values: dict[str, Any]) -> dict[str, Any]:
         # Si ya hay una URL de base de datos, no hacer nada
-        if "DATABASE_URL" in values and values["DATABASE_URL"]:
+        if values.get("DATABASE_URL"):
             return values
 
         # Construir la URL de conexión a partir de variables individuales
@@ -199,7 +198,7 @@ class Settings(BaseSettings):
         return values
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Obtiene la configuración de la aplicación.
 

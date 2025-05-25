@@ -6,8 +6,7 @@ para las operaciones relacionadas con contactos y grupos de contactos.
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -19,37 +18,38 @@ from app.contacts.models import ContactStatus, ContactType
 class ContactBase(BaseModel):
     """Esquema base para los contactos."""
 
-    first_name: Optional[str] = Field(None, description="Nombre del contacto")
-    last_name: Optional[str] = Field(None, description="Apellido del contacto")
-    email: Optional[EmailStr] = Field(
-        None, description="Correo electrónico del contacto"
+    first_name: str | None = Field(default=None, description="Nombre del contacto")
+    last_name: str | None = Field(default=None, description="Apellido del contacto")
+    email: EmailStr | None = Field(
+        default=None, description="Correo electrónico del contacto"
     )
-    phone: Optional[str] = Field(None, description="Número de teléfono del contacto")
-    company: Optional[str] = Field(
-        None, description="Empresa u organización del contacto"
+    phone: str | None = Field(
+        default=None, description="Número de teléfono del contacto"
     )
-    position: Optional[str] = Field(
-        None, description="Cargo o posición del contacto en la empresa"
+    company: str | None = Field(
+        default=None, description="Empresa u organización del contacto"
+    )
+    position: str | None = Field(
+        default=None, description="Cargo o posición del contacto en la empresa"
     )
     contact_type: ContactType = Field(
         default=ContactType.OTHER,
         description="Tipo de contacto (personal, trabajo, familiar, etc.)",
     )
     status: ContactStatus = Field(
-        default=ContactStatus.ACTIVE,
-        description="Estado actual del contacto",
+        default=ContactStatus.ACTIVE, description="Estado actual del contacto"
     )
     is_favorite: bool = Field(
         default=False, description="Indica si el contacto está marcado como favorito"
     )
-    address: Optional[str] = Field(
-        None, description="Dirección física completa del contacto"
+    address: str | None = Field(
+        default=None, description="Dirección física completa del contacto"
     )
-    notes: Optional[str] = Field(
-        None, description="Notas adicionales sobre el contacto"
+    notes: str | None = Field(
+        default=None, description="Notas adicionales sobre el contacto"
     )
-    custom_fields: Optional[Dict[str, Any]] = Field(
-        None, description="Campos personalizados adicionales en formato JSON"
+    custom_fields: dict[str, Any] | None = Field(
+        default=None, description="Campos personalizados adicionales en formato JSON"
     )
 
     @field_validator("phone")
@@ -90,19 +90,19 @@ class ContactUpdate(ContactBase):
 class ContactInDB(ContactBase):
     """Esquema para representar un contacto en la base de datos."""
 
-    id: int = Field(..., description="ID único del contacto")
+    id: int = Field(default=..., description="ID único del contacto")
     owner_id: int = Field(
-        ..., description="ID del usuario propietario de este contacto"
+        default=..., description="ID del usuario propietario de este contacto"
     )
-    contact_user_id: Optional[int] = Field(
-        None,
+    contact_user_id: int | None = Field(
+        default=None,
         description="ID del usuario de la plataforma si el contacto está registrado",
     )
     created_at: datetime = Field(
-        ..., description="Fecha y hora de creación del contacto"
+        default=..., description="Fecha y hora de creación del contacto"
     )
     updated_at: datetime = Field(
-        ..., description="Fecha y hora de la última actualización del contacto"
+        default=..., description="Fecha y hora de la última actualización del contacto"
     )
 
     class Config:
@@ -113,9 +113,9 @@ class ContactInDB(ContactBase):
 class ContactGroupBase(BaseModel):
     """Esquema base para los grupos de contactos."""
 
-    name: str = Field(..., description="Nombre del grupo de contactos")
-    description: Optional[str] = Field(
-        None, description="Descripción del grupo de contactos"
+    name: str = Field(default=..., description="Nombre del grupo de contactos")
+    description: str | None = Field(
+        default=None, description="Descripción del grupo de contactos"
     )
 
 
@@ -129,28 +129,30 @@ class ContactGroupCreate(ContactGroupBase):
 class ContactGroupUpdate(BaseModel):
     """Esquema para la actualización de un grupo de contactos."""
 
-    name: Optional[str] = Field(None, description="Nuevo nombre del grupo de contactos")
-    description: Optional[str] = Field(
-        None, description="Nueva descripción del grupo de contactos"
+    name: str | None = Field(
+        default=None, description="Nuevo nombre del grupo de contactos"
+    )
+    description: str | None = Field(
+        default=None, description="Nueva descripción del grupo de contactos"
     )
 
 
 class ContactGroupInDB(ContactGroupBase):
     """Esquema para representar un grupo de contactos en la base de datos."""
 
-    id: int = Field(..., description="ID único del grupo de contactos")
+    id: int = Field(default=..., description="ID único del grupo de contactos")
     owner_id: int = Field(
-        ..., description="ID del usuario propietario de este grupo de contactos"
+        default=..., description="ID del usuario propietario de este grupo de contactos"
     )
     created_at: datetime = Field(
-        ..., description="Fecha y hora de creación del grupo de contactos"
+        default=..., description="Fecha y hora de creación del grupo de contactos"
     )
     updated_at: datetime = Field(
-        ...,
+        default=...,
         description="Fecha y hora de la última actualización del grupo de contactos",
     )
-    contacts_count: Optional[int] = Field(
-        None, description="Número de contactos en este grupo"
+    contacts_count: int | None = Field(
+        default=None, description="Número de contactos en este grupo"
     )
 
     class Config:
@@ -161,7 +163,7 @@ class ContactGroupInDB(ContactGroupBase):
 class ContactResponse(BaseResponse):
     """Esquema para la respuesta de un contacto."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "id": 1,
@@ -189,7 +191,7 @@ class ContactResponse(BaseResponse):
 class ContactListResponse(PaginatedResponse):
     """Esquema para la respuesta de una lista de contactos."""
 
-    data: List[dict] = Field(
+    data: list[dict] = Field(
         ...,
         example=[
             {
@@ -221,7 +223,7 @@ class ContactListResponse(PaginatedResponse):
 class ContactGroupResponse(BaseResponse):
     """Esquema para la respuesta de un grupo de contactos."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "id": 1,
@@ -238,7 +240,7 @@ class ContactGroupResponse(BaseResponse):
 class ContactGroupListResponse(PaginatedResponse):
     """Esquema para la respuesta de una lista de grupos de contactos."""
 
-    data: List[dict] = Field(
+    data: list[dict] = Field(
         ...,
         example=[
             {
@@ -261,7 +263,7 @@ class ContactGroupListResponse(PaginatedResponse):
 class AddContactToGroupResponse(BaseResponse):
     """Esquema para la respuesta de agregar un contacto a un grupo."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "message": "Contacto agregado al grupo correctamente",
@@ -274,7 +276,7 @@ class AddContactToGroupResponse(BaseResponse):
 class RemoveContactFromGroupResponse(BaseResponse):
     """Esquema para la respuesta de eliminar un contacto de un grupo."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "message": "Contacto eliminado del grupo correctamente",

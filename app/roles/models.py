@@ -4,21 +4,30 @@ Este módulo define los modelos de base de datos relacionados con los roles de u
 utilizando SQLAlchemy ORM con soporte asíncrono.
 """
 
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Table
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.common.database import Base
+from app.users.models import User
 
 # Tabla de asociación para la relación muchos a muchos entre usuarios y roles
 user_roles = Table(
     "user_roles",
     Base.metadata,
-    Column("user_id", Integer, primary_key=True),
-    Column("role_id", Integer, primary_key=True),
-    Column("assigned_at", DateTime, default=datetime.utcnow, nullable=False),
+    Column(
+        "user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "assigned_at",
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    ),
     Column("assigned_by", Integer, nullable=True),
     Column("is_active", Boolean, default=True, nullable=False),
     Column("expires_at", DateTime, nullable=True),
@@ -43,7 +52,7 @@ class Role(Base):
     name: Mapped[str] = mapped_column(
         String(50), unique=True, nullable=False, index=True
     )
-    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_system: Mapped[bool] = mapped_column(
         Boolean,
@@ -53,7 +62,7 @@ class Role(Base):
     )
 
     # Relaciones
-    permissions: Mapped[List["Permission"]] = relationship(
+    permissions: Mapped[list["Permission"]] = relationship(
         "Permission",
         secondary="role_permissions",
         back_populates="roles",
@@ -61,7 +70,7 @@ class Role(Base):
     )
 
     # Usuarios que tienen este rol
-    users: Mapped[List["User"]] = relationship(
+    users: Mapped[list["User"]] = relationship(
         "User",
         secondary=user_roles,
         back_populates="roles",
@@ -70,12 +79,12 @@ class Role(Base):
 
     # Auditoría
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
@@ -103,10 +112,10 @@ class Permission(Base):
     code: Mapped[str] = mapped_column(
         String(50), unique=True, nullable=False, index=True
     )
-    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relaciones
-    roles: Mapped[List[Role]] = relationship(
+    roles: Mapped[list[Role]] = relationship(
         "Role",
         secondary="role_permissions",
         back_populates="permissions",
@@ -115,12 +124,12 @@ class Permission(Base):
 
     # Auditoría
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
@@ -128,13 +137,25 @@ class Permission(Base):
         return f"<Permission {self.code} ({self.name})>"
 
 
-# Tabla de asociación para la relación muchos a muchos entre roles y permisons
+# Tabla de asociación para la relación muchos a muchos entre roles y permisos
 role_permissions = Table(
     "role_permissions",
     Base.metadata,
-    Column("role_id", Integer, primary_key=True),
-    Column("permission_id", Integer, primary_key=True),
-    Column("assigned_at", DateTime, default=datetime.utcnow, nullable=False),
+    Column(
+        "role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "permission_id",
+        Integer,
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "assigned_at",
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    ),
     Column("assigned_by", Integer, nullable=True),
     comment="Tabla de asociación entre roles y permisos",
 )

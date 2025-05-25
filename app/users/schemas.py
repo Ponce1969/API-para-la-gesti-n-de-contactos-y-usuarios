@@ -5,7 +5,6 @@ Este módulo define los modelos de validación de datos para la API de usuarios.
 """
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -16,8 +15,10 @@ from app.common.schemas import BaseResponse, PaginatedResponse
 class UserBase(BaseModel):
     """Esquema base para usuario."""
 
-    email: EmailStr = Field(..., description="Correo electrónico del usuario")
-    full_name: Optional[str] = Field(None, description="Nombre completo del usuario")
+    email: EmailStr = Field(default=..., description="Correo electrónico del usuario")
+    full_name: str | None = Field(
+        default=None, description="Nombre completo del usuario"
+    )
     is_active: bool = Field(
         default=True, description="Indica si el usuario está activo"
     )
@@ -58,15 +59,13 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """Esquema para la actualización de un usuario."""
 
-    email: Optional[EmailStr] = Field(None, description="Nuevo correo electrónico")
-    full_name: Optional[str] = Field(None, description="Nuevo nombre completo")
-    password: Optional[str] = Field(
+    email: EmailStr | None = Field(None, description="Nuevo correo electrónico")
+    full_name: str | None = Field(None, description="Nuevo nombre completo")
+    password: str | None = Field(
         None, min_length=8, max_length=100, description="Nueva contraseña"
     )
-    is_active: Optional[bool] = Field(
-        None, description="Indica si el usuario está activo"
-    )
-    is_verified: Optional[bool] = Field(
+    is_active: bool | None = Field(None, description="Indica si el usuario está activo")
+    is_verified: bool | None = Field(
         None, description="Indica si el correo ha sido verificado"
     )
 
@@ -75,10 +74,14 @@ class UserUpdate(BaseModel):
 class UserInDB(UserBase):
     """Esquema para representar un usuario en la base de datos."""
 
-    id: int = Field(..., description="ID único del usuario")
-    hashed_password: str = Field(..., description="Hash de la contraseña")
-    created_at: datetime = Field(..., description="Fecha de creación del usuario")
-    updated_at: datetime = Field(..., description="Fecha de última actualización")
+    id: int = Field(default=..., description="ID único del usuario")
+    hashed_password: str = Field(default=..., description="Hash de la contraseña")
+    created_at: datetime = Field(
+        default=..., description="Fecha de creación del usuario"
+    )
+    updated_at: datetime = Field(
+        default=..., description="Fecha de última actualización"
+    )
 
     class Config:
         from_attributes = True
@@ -101,7 +104,7 @@ class UserInDB(UserBase):
 class UserResponse(BaseResponse):
     """Esquema para la respuesta de un usuario."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "id": 1,
@@ -119,7 +122,7 @@ class UserResponse(BaseResponse):
 class UserListResponse(PaginatedResponse):
     """Esquema para la respuesta de una lista de usuarios."""
 
-    data: List[dict] = Field(
+    data: list[dict] = Field(
         ...,
         example=[
             {
@@ -158,55 +161,74 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     """Esquema para los datos del token."""
 
-    email: Optional[str] = None
+    email: str | None = None
 
 
 # --- Verification Token Schemas ---
 
+
 class VerificationTokenBase(BaseModel):
     """Esquema base para un token de verificación."""
+
     token: str = Field(..., description="El valor del token único.")
     user_id: int = Field(..., description="ID del usuario al que pertenece el token.")
-    token_type: str = Field(..., description="Tipo de token (ej: email_verification, password_reset).")
-    expires_at: datetime = Field(..., description="Fecha y hora de expiración del token.")
+    token_type: str = Field(
+        ..., description="Tipo de token (ej: email_verification, password_reset)."
+    )
+    expires_at: datetime = Field(
+        ..., description="Fecha y hora de expiración del token."
+    )
+
 
 class VerificationTokenCreateInternal(VerificationTokenBase):
     """
     Esquema para la creación interna de un token de verificación en la BD.
     Se espera que todos los campos sean provistos.
     """
+
     # Este esquema se usa cuando todos los datos del token (incluido el token en sí y expires_at)
     # ya están definidos, típicamente justo antes de guardarlo en la BD.
     pass
 
+
 class VerificationTokenInDBBase(VerificationTokenBase):
     """Esquema base para un token de verificación leído desde la BD."""
+
     id: int = Field(..., description="ID único del token.")
     created_at: datetime = Field(..., description="Fecha y hora de creación del token.")
     is_used: bool = Field(..., description="Indica si el token ya ha sido utilizado.")
 
     class Config:
-        from_attributes = True # Para Pydantic v2
+        from_attributes = True  # Para Pydantic v2
+
 
 class VerificationTokenInDB(VerificationTokenInDBBase):
     """Esquema completo para un token de verificación leído desde la BD."""
+
     # Hereda todos los campos y la configuración.
     pass
+
 
 class VerificationTokenServiceCreate(BaseModel):
     """
     Esquema para solicitar la creación de un token de verificación desde un servicio.
     El token y la fecha de expiración serán generados por el servicio.
     """
-    user_id: int = Field(..., description="ID del usuario para el cual generar el token.")
-    token_type: str = Field(..., description="Tipo de token a generar (ej: email_verification, password_reset).")
+
+    user_id: int = Field(
+        ..., description="ID del usuario para el cual generar el token."
+    )
+    token_type: str = Field(
+        ...,
+        description="Tipo de token a generar (ej: email_verification, password_reset).",
+    )
 
 
 # Esquema para cambio de contraseña
 class PasswordResetRequest(BaseModel):
     """Esquema para solicitar restablecimiento de contraseña."""
 
-    email: EmailStr = Field(..., description="Correo electrónico del usuario")
+    email: EmailStr = Field(default=..., description="Correo electrónico del usuario")
 
 
 class PasswordReset(BaseModel):
@@ -229,7 +251,7 @@ class EmailVerifyRequest(BaseModel):
 class AuthResponse(BaseResponse):
     """Esquema para la respuesta de autenticación."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -250,7 +272,7 @@ class AuthResponse(BaseResponse):
 class EmailVerifyResponse(BaseResponse):
     """Esquema para la respuesta de verificación de correo."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None,
         example={
             "message": "Correo verificado exitosamente",
@@ -263,6 +285,6 @@ class EmailVerifyResponse(BaseResponse):
 class PasswordResetResponse(BaseResponse):
     """Esquema para la respuesta de restablecimiento de contraseña."""
 
-    data: Optional[dict] = Field(
+    data: dict | None = Field(
         None, example={"message": "Contraseña actualizada exitosamente"}
     )

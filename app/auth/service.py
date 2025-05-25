@@ -5,27 +5,29 @@ Este módulo proporciona funciones para manejar la autenticación de usuarios,
 generación y verificación de tokens JWT, y operaciones relacionadas con la seguridad.
 """
 
+import logging  # Added for logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.config import settings
-from app.common.errors import DatabaseError, ResourceNotFoundError
+from app.common.errors import DatabaseError
+from app.common.result import is_failure
 from app.users import service as user_service
-import logging # Added for logging
+from app.users.errors import UserAlreadyExistsError as UsersUserAlreadyExistsError
+from app.users.errors import UserNotFoundError  # Added
 from app.users.models import User
-from app.users.schemas import UserCreate, UserUpdate # Import UserCreate and UserUpdate
-from app.users.repository import UserRepository # Added
-from app.users.service import UserService # Added
-from app.users.errors import UserNotFoundError, UserAlreadyExistsError as UsersUserAlreadyExistsError # Added
+from app.users.repository import UserRepository  # Added
+from app.users.schemas import UserCreate, UserUpdate  # Import UserCreate and UserUpdate
+from app.users.service import UserService  # Added
 
 from . import errors
 from .schemas import TokenData
 
-logger = logging.getLogger(__name__) # Added logger
+logger = logging.getLogger(__name__)  # Added logger
 
 # Configuración de contraseñas
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
@@ -58,9 +60,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-async def authenticate_user(
-    db: AsyncSession, email: str, password: str
-) -> Optional[User]:
+async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
     """
     Autentica a un usuario con su correo electrónico y contraseña.
 
@@ -94,7 +94,7 @@ async def authenticate_user(
     """
     user_result = await user_service.get_user_by_email(db, email)
 
-    if user_result.is_failure():
+    if is_failure(user_result):
         # Log the specific error from user_service if needed, then raise generic auth error
         # error = user_result.error()
         # logger.warning(f"Failed to find user '{email}' during auth: {error}")
@@ -117,7 +117,7 @@ async def authenticate_user(
 
 
 def create_access_token(
-    data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+    data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
     """
     Crea un token de acceso JWT genérico.
@@ -145,13 +145,13 @@ def create_access_token(
 
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY.get_secret_value(), algorithm=settings.JWT_ALGORITHM
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
     )
     return encoded_jwt
 
 
 def create_refresh_token(
-    data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+    data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
     """
     Crea un token de actualización JWT.
@@ -177,18 +177,20 @@ def create_refresh_token(
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        expire = datetime.now(timezone.utc) + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
 
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(
         to_encode,
-        settings.JWT_REFRESH_SECRET_KEY.get_secret_value(), # Use the specific refresh token secret key
+        settings.JWT_REFRESH_SECRET_KEY.get_secret_value(),  # Use the specific refresh token secret key
         algorithm=settings.JWT_ALGORITHM,
     )
     return encoded_jwt
 
 
-def create_password_reset_token(data: Dict[str, Any]) -> str:
+def create_password_reset_token(data: dict[str, Any]) -> str:
     """
     Crea un token específico para el restablecimiento de contraseña.
 
@@ -209,7 +211,7 @@ def create_password_reset_token(data: Dict[str, Any]) -> str:
     )
 
 
-def create_email_verification_token(data: Dict[str, Any]) -> str:
+def create_email_verification_token(data: dict[str, Any]) -> str:
     """
     Crea un token específico para la verificación de correo electrónico.
 
@@ -263,30 +265,34 @@ async def verify_token(token: str, token_type: str = "access") -> TokenData:
 
     try:
         if token_type == "access":
-            secret_key = settings.JWT_SECRET_KEY.get_secret_value()
+            secret_key = settings.JWT_SECRET_KEY
         elif token_type == "refresh":
             secret_key = settings.JWT_REFRESH_SECRET_KEY.get_secret_value()
         else:
-            logger.error(f"Invalid token_type '{token_type}' specified for verification.")
-            raise errors.InvalidTokenError("Tipo de token inválido especificado para verificación")
+            logger.error(
+                f"Invalid token_type '{token_type}' specified for verification."
+            )
+            raise errors.InvalidTokenError(
+                "Tipo de token inválido especificado para verificación"
+            )
 
-        payload = jwt.decode(
-            token, secret_key, algorithms=[settings.JWT_ALGORITHM]
-        )
+        payload = jwt.decode(token, secret_key, algorithms=[settings.JWT_ALGORITHM])
 
-        subject: Optional[str] = payload.get("sub")
+        subject: str | None = payload.get("sub")
         if subject is None:
             logger.warning("Token JWT no contiene 'sub' (subject) en el payload.")
             raise credentials_exception
 
         token_type_from_payload = payload.get("type")
         if token_type_from_payload != token_type:
-            logger.warning(f"Tipo de token en payload ('{token_type_from_payload}') no coincide con el esperado ('{token_type}').")
+            logger.warning(
+                f"Tipo de token en payload ('{token_type_from_payload}') no coincide con el esperado ('{token_type}')."
+            )
             raise errors.InvalidTokenError(
                 f"Tipo de token inválido: se esperaba {token_type} pero se obtuvo {token_type_from_payload}"
             )
 
-        token_data = TokenData(sub=subject) # Use 'sub' for TokenData
+        token_data = TokenData(sub=subject)  # Use 'sub' for TokenData
         return token_data
 
     except JWTError as e:
@@ -314,7 +320,9 @@ async def verify_refresh_token(token: str) -> TokenData:
     return await verify_token(token, "refresh")
 
 
-async def register_user(db: AsyncSession, user_data: UserCreate) -> User: # Returns SQLAlchemy User
+async def register_user(
+    db: AsyncSession, user_data: UserCreate
+) -> User:  # Returns SQLAlchemy User
     """
     Registra un nuevo usuario en el sistema.
 
@@ -348,17 +356,25 @@ async def register_user(db: AsyncSession, user_data: UserCreate) -> User: # Retu
     existing_user_check = await user_service.get_user_by_email(db, user_data.email)
     if existing_user_check.is_success():
         logger.info(f"Intento de registro para email existente: {user_data.email}")
-        raise errors.EmailAlreadyExistsError(f"El correo electrónico {user_data.email} ya está registrado")
+        raise errors.EmailAlreadyExistsError(
+            f"El correo electrónico {user_data.email} ya está registrado"
+        )
     else:
         # User lookup failed, check the error type
         error = existing_user_check.error()
         if not isinstance(error, UserNotFoundError):
             # It's some other DatabaseError from user_service.get_user_by_email
-            logger.error(f"Error de base de datos al verificar si el usuario '{user_data.email}' existe: {error}")
-            raise DatabaseError(f"Error de base de datos al verificar la existencia del usuario: {error}")
-        
+            logger.error(
+                f"Error de base de datos al verificar si el usuario '{user_data.email}' existe: {error}"
+            )
+            raise DatabaseError(
+                f"Error de base de datos al verificar la existencia del usuario: {error}"
+            )
+
         # Only proceed if UserNotFoundError, meaning user does not exist
-        logger.info(f"Usuario con email '{user_data.email}' no encontrado, procediendo con el registro.")
+        logger.info(
+            f"Usuario con email '{user_data.email}' no encontrado, procediendo con el registro."
+        )
         try:
             # 2. Register the new user using UserService
             user_repo = UserRepository(db)
@@ -368,23 +384,29 @@ async def register_user(db: AsyncSession, user_data: UserCreate) -> User: # Retu
             hashed_password = get_password_hash(user_data.password)
             user_create_data_dict = user_data.model_dump()
             user_create_data_dict["hashed_password"] = hashed_password
-            del user_create_data_dict["password"] # Remove plain password
+            del user_create_data_dict["password"]  # Remove plain password
             user_create_with_hashed_pwd = UserCreate(**user_create_data_dict)
 
-            new_user_result = await _user_service.register_new_user(user_data=user_create_with_hashed_pwd)
+            new_user_result = await _user_service.register_new_user(
+                user_data=user_create_with_hashed_pwd
+            )
 
-            if new_user_result.is_failure():
+            if new_is_failure(user_result):
                 error = new_user_result.error()
-                logger.error(f"Error al registrar nuevo usuario '{user_data.email}': {error}")
+                logger.error(
+                    f"Error al registrar nuevo usuario '{user_data.email}': {error}"
+                )
                 if isinstance(error, UsersUserAlreadyExistsError):
                     # This specific error should ideally be caught by the initial check,
                     # but if it occurs here, it's still an EmailAlreadyExistsError.
                     raise errors.EmailAlreadyExistsError(str(error))
                 elif isinstance(error, DatabaseError):
-                    raise error # Re-raise the original DatabaseError
+                    raise error  # Re-raise the original DatabaseError
                 else:
                     # Catch-all for other errors from _user_service.register_new_user
-                    raise errors.AuthServiceError(f"Error inesperado durante el registro del servicio de usuario: {error}")
+                    raise errors.AuthServiceError(
+                        f"Error inesperado durante el registro del servicio de usuario: {error}"
+                    )
 
             created_user = new_user_result.unwrap()
             logger.info(f"Usuario '{created_user.email}' registrado exitosamente.")
@@ -398,17 +420,32 @@ async def register_user(db: AsyncSession, user_data: UserCreate) -> User: # Retu
             return created_user
 
         except errors.EmailAlreadyExistsError as e_exists:
-            logger.warning(f"Intento de registrar email existente '{user_data.email}' detectado dentro del bloque try: {e_exists}")
+            logger.warning(
+                f"Intento de registrar email existente '{user_data.email}' detectado dentro del bloque try: {e_exists}"
+            )
             raise  # Re-raise the EmailAlreadyExistsError
         except DatabaseError as db_err:
-            logger.error(f"Error de base de datos durante el registro del usuario {user_data.email}: {db_err}", exc_info=True)
-            raise # Re-raise the DatabaseError to be handled by the caller or a generic handler
+            logger.error(
+                f"Error de base de datos durante el registro del usuario {user_data.email}: {db_err}",
+                exc_info=True,
+            )
+            raise  # Re-raise the DatabaseError to be handled by the caller or a generic handler
         except errors.AuthServiceError as auth_svc_err:
-            logger.error(f"Error del servicio de autenticación durante el registro {user_data.email}: {auth_svc_err}", exc_info=True)
-            raise # Re-raise the AuthServiceError
-        except Exception as e: # Catch any other unexpected errors during registration process
-            logger.error(f"Error inesperado durante el proceso de registro del usuario {user_data.email}: {str(e)}", exc_info=True)
-            raise errors.AuthServiceError(f"Error inesperado al registrar el usuario: {str(e)}")  # Ensure an error is raised
+            logger.error(
+                f"Error del servicio de autenticación durante el registro {user_data.email}: {auth_svc_err}",
+                exc_info=True,
+            )
+            raise  # Re-raise the AuthServiceError
+        except (
+            Exception
+        ) as e:  # Catch any other unexpected errors during registration process
+            logger.error(
+                f"Error inesperado durante el proceso de registro del usuario {user_data.email}: {e!s}",
+                exc_info=True,
+            )
+            raise errors.AuthServiceError(
+                f"Error inesperado al registrar el usuario: {e!s}"
+            )  # Ensure an error is raised
 
 
 async def send_verification_email(db: AsyncSession, email: str) -> None:
@@ -437,19 +474,25 @@ async def send_verification_email(db: AsyncSession, email: str) -> None:
                                  o al encolar el envío del correo.
     """
     user_result = await user_service.get_user_by_email(db, email=email)
-    if user_result.is_failure():
+    if is_failure(user_result):
         error = user_result.error()
         # Log the error, but do not expose to the client whether the user exists or not.
         if isinstance(error, UserNotFoundError):
-            logger.info(f"Solicitud de reseteo de contraseña para email no registrado: {email}")
-        else: # DatabaseError
-            logger.error(f"Error de BD al buscar usuario '{email}' para reseteo de contraseña: {error}")
-        return # Silently return as per original logic
-    
+            logger.info(
+                f"Solicitud de reseteo de contraseña para email no registrado: {email}"
+            )
+        else:  # DatabaseError
+            logger.error(
+                f"Error de BD al buscar usuario '{email}' para reseteo de contraseña: {error}"
+            )
+        return  # Silently return as per original logic
+
     user: User = user_result.unwrap()
 
     # Crear token de verificación
-    token_data = {"sub": user.email} # 'sub' (subject) is typically user ID or unique identifier
+    token_data = {
+        "sub": user.email
+    }  # 'sub' (subject) is typically user ID or unique identifier
     token = create_access_token(
         token_data,
         expires_delta=timedelta(hours=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS),
@@ -494,7 +537,9 @@ async def verify_email_token(db: AsyncSession, token: str) -> User:
     """
     try:
         # Verificar el token
-        token_payload: TokenData = await verify_token(token, token_type="access") # Assuming email verification token is an access token type
+        token_payload: TokenData = await verify_token(
+            token, token_type="access"
+        )  # Assuming email verification token is an access token type
     except errors.InvalidTokenError as e:
         logger.warning(f"Intento de verificar email con token inválido: {e}")
         raise
@@ -505,15 +550,21 @@ async def verify_email_token(db: AsyncSession, token: str) -> User:
 
     # Obtener el usuario
     user_result = await user_service.get_user_by_email(db, email=token_payload.sub)
-    if user_result.is_failure():
+    if is_failure(user_result):
         error = user_result.error()
-        logger.warning(f"Usuario '{token_payload.sub}' no encontrado durante verificación de email: {error}")
+        logger.warning(
+            f"Usuario '{token_payload.sub}' no encontrado durante verificación de email: {error}"
+        )
         if isinstance(error, UserNotFoundError):
             # Use auth_errors.InvalidTokenError as the user tied to token doesn't exist
-            raise errors.InvalidTokenError(f"Usuario asociado al token de verificación no encontrado.")
-        else: # DatabaseError
-            raise DatabaseError(f"Error de BD al buscar usuario {token_payload.sub} para verificar email.")
-    
+            raise errors.InvalidTokenError(
+                "Usuario asociado al token de verificación no encontrado."
+            )
+        else:  # DatabaseError
+            raise DatabaseError(
+                f"Error de BD al buscar usuario {token_payload.sub} para verificar email."
+            )
+
     user: User = user_result.unwrap()
 
     if user.is_verified:
@@ -523,16 +574,16 @@ async def verify_email_token(db: AsyncSession, token: str) -> User:
     # Actualizar el estado de verificación del usuario
     user_update_schema = UserUpdate(is_verified=True)
     updated_user_result = await user_service.update_user(
-        db,
-        user_id=user.id,
-        user_update_data=user_update_schema
+        db, user_id=user.id, user_update_data=user_update_schema
     )
-    if updated_user_result.is_failure():
+    if updated_is_failure(user_result):
         update_error = updated_user_result.error()
-        logger.error(f"Error al actualizar usuario '{user.email}' a verificado: {update_error}")
+        logger.error(
+            f"Error al actualizar usuario '{user.email}' a verificado: {update_error}"
+        )
         # Consider specific error types from user_service.update_user if available
         raise DatabaseError(f"Error al marcar usuario '{user.email}' como verificado.")
-    
+
     logger.info(f"Usuario '{user.email}' verificado exitosamente.")
     return updated_user_result.unwrap()
 
@@ -561,19 +612,23 @@ async def send_password_reset_email(db: AsyncSession, email: str) -> None:
                                  o al encolar el envío del correo.
     """
     user_result = await user_service.get_user_by_email(db, email=email)
-    if user_result.is_failure():
+    if is_failure(user_result):
         error = user_result.error()
         # Log the error, but do not expose to the client whether the user exists or not.
         if isinstance(error, UserNotFoundError):
-            logger.info(f"Solicitud de reseteo de contraseña para email no registrado: {email}")
-        else: # DatabaseError
-            logger.error(f"Error de BD al buscar usuario '{email}' para reseteo de contraseña: {error}")
-        return # Silently return as per original logic
-    
+            logger.info(
+                f"Solicitud de reseteo de contraseña para email no registrado: {email}"
+            )
+        else:  # DatabaseError
+            logger.error(
+                f"Error de BD al buscar usuario '{email}' para reseteo de contraseña: {error}"
+            )
+        return  # Silently return as per original logic
+
     user: User = user_result.unwrap()
 
     # Crear token de restablecimiento
-    token_data_payload = {"sub": user.email} # Ensure 'sub' contains the email
+    token_data_payload = {"sub": user.email}  # Ensure 'sub' contains the email
     token = create_access_token(
         token_data_payload,
         expires_delta=timedelta(hours=settings.RESET_PASSWORD_TOKEN_EXPIRE_HOURS),
@@ -581,7 +636,9 @@ async def send_password_reset_email(db: AsyncSession, email: str) -> None:
 
     # TODO: Implementar el envío real del correo electrónico
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-    logger.info(f"Se enviaría correo de reseteo de contraseña a {user.email} con URL: {reset_url}")
+    logger.info(
+        f"Se enviaría correo de reseteo de contraseña a {user.email} con URL: {reset_url}"
+    )
 
 
 async def reset_password(db: AsyncSession, token: str, new_password: str) -> User:

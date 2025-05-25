@@ -5,13 +5,12 @@ utilizando SQLAlchemy ORM con soporte asíncrono.
 """
 
 from datetime import datetime
-from typing import List, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.common.database import Base
+from app.contacts.models import Contact
 from app.roles.models import Role, user_roles
 
 
@@ -45,13 +44,13 @@ class User(Base):
     )
 
     # Información personal
-    first_name: Mapped[Optional[str]] = mapped_column(
+    first_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Nombre(s) del usuario"
     )
-    last_name: Mapped[Optional[str]] = mapped_column(
+    last_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Apellido(s) del usuario"
     )
-    avatar_url: Mapped[Optional[str]] = mapped_column(
+    avatar_url: Mapped[str | None] = mapped_column(
         String(512), nullable=True, comment="URL de la imagen de perfil del usuario"
     )
 
@@ -90,7 +89,7 @@ class User(Base):
     )
 
     # Auditoría
-    last_login: Mapped[Optional[datetime]] = mapped_column(
+    last_login: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
         comment="Fecha y hora del último inicio de sesión exitoso",
@@ -110,7 +109,7 @@ class User(Base):
     )
 
     # Relaciones
-    roles: Mapped[List[Role]] = relationship(
+    roles: Mapped[list[Role]] = relationship(
         "Role",
         secondary=user_roles,
         back_populates="users",
@@ -118,7 +117,7 @@ class User(Base):
     )
 
     # Relación con contactos (como propietario)
-    owned_contacts: Mapped[List["Contact"]] = relationship(
+    owned_contacts: Mapped[list["Contact"]] = relationship(
         "Contact",
         back_populates="owner",
         foreign_keys="Contact.owner_id",
@@ -126,14 +125,14 @@ class User(Base):
     )
 
     # Relación con contactos (como contacto)
-    contact_entries: Mapped[List["Contact"]] = relationship(
+    contact_entries: Mapped[list["Contact"]] = relationship(
         "Contact",
         back_populates="contact_user",
         foreign_keys="Contact.contact_user_id",
         lazy="selectin",
     )
 
-    verification_tokens: Mapped[List["VerificationToken"]] = relationship(
+    verification_tokens: Mapped[list["VerificationToken"]] = relationship(
         "VerificationToken",
         back_populates="user",
         lazy="selectin",

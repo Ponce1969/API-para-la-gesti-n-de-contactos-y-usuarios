@@ -5,7 +5,7 @@ proporcionando un manejo de errores consistente y tipado.
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
@@ -52,7 +52,7 @@ class ErrorDetail(BaseModel):
 
     code: str = Field(..., description="Código de error único")
     message: str = Field(..., description="Mensaje de error descriptivo")
-    detail: Optional[Union[str, Dict[str, Any], List[Any]]] = Field(
+    detail: str | dict[str, Any] | list[Any] | None = Field(
         None, description="Detalles adicionales del error"
     )
 
@@ -71,10 +71,10 @@ class AppError(Exception):
     def __init__(
         self,
         status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
-        code: Union[str, ErrorCode] = ErrorCode.INTERNAL_SERVER_ERROR,
+        code: str | ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
         message: str = "Ha ocurrido un error inesperado",
-        detail: Optional[Union[str, Dict[str, Any], List[Any]]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        detail: str | dict[str, Any] | list[Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status_code = status_code
         self.code = code.value if isinstance(code, ErrorCode) else code
@@ -83,12 +83,12 @@ class AppError(Exception):
         self.headers = headers
         super().__init__(self.message)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convierte el error a un diccionario para la respuesta de la API."""
         error_detail = ErrorDetail(
             code=self.code, message=self.message, detail=self.detail
         )
-        return {"error": error_detail.dict(exclude_none=True)}
+        return {"error": error_detail.model_dump(exclude_none=True)}
 
 
 # Errores específicos
@@ -98,8 +98,8 @@ class ResourceNotFoundError(AppError):
     def __init__(
         self,
         resource_name: str = "recurso",
-        resource_id: Optional[Union[str, int]] = None,
-        detail: Optional[Union[str, Dict[str, Any]]] = None,
+        resource_id: str | int | None = None,
+        detail: str | dict[str, Any] | None = None,
     ) -> None:
         message = f"No se encontró el {resource_name}"
         if resource_id is not None:
@@ -116,7 +116,7 @@ class ResourceNotFoundError(AppError):
 class UnauthorizedError(AppError):
     """Excepción lanzada cuando falla la autenticación."""
 
-    def __init__(self, detail: Optional[str] = None) -> None:
+    def __init__(self, detail: str | None = None) -> None:
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
             code=ErrorCode.INVALID_CREDENTIALS,
@@ -129,7 +129,7 @@ class UnauthorizedError(AppError):
 class ForbiddenError(AppError):
     """Excepción lanzada cuando el usuario no tiene permisos suficientes."""
 
-    def __init__(self, detail: Optional[str] = None) -> None:
+    def __init__(self, detail: str | None = None) -> None:
         super().__init__(
             status_code=status.HTTP_403_FORBIDDEN,
             code=ErrorCode.INSUFFICIENT_PERMISSIONS,
@@ -141,7 +141,7 @@ class ForbiddenError(AppError):
 class ValidationError(AppError):
     """Excepción lanzada cuando falla la validación de datos."""
 
-    def __init__(self, detail: Union[str, Dict[str, Any], List[Any]]) -> None:
+    def __init__(self, detail: str | dict[str, Any] | list[Any]) -> None:
         super().__init__(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             code=ErrorCode.VALIDATION_ERROR,
@@ -153,7 +153,7 @@ class ValidationError(AppError):
 class ConflictError(AppError):
     """Excepción lanzada cuando hay un conflicto con el estado actual del recurso."""
 
-    def __init__(self, detail: Optional[Union[str, Dict[str, Any]]] = None) -> None:
+    def __init__(self, detail: str | dict[str, Any] | None = None) -> None:
         super().__init__(
             status_code=status.HTTP_409_CONFLICT,
             code=ErrorCode.DUPLICATE_ENTRY,
@@ -165,7 +165,7 @@ class ConflictError(AppError):
 class DatabaseError(AppError):
     """Excepción lanzada cuando ocurre un error en la base de datos."""
 
-    def __init__(self, detail: Optional[Union[str, Dict[str, Any]]] = None) -> None:
+    def __init__(self, detail: str | dict[str, Any] | None = None) -> None:
         super().__init__(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code=ErrorCode.DATABASE_ERROR,
@@ -177,7 +177,7 @@ class DatabaseError(AppError):
 class ServiceError(AppError):
     """Excepción lanzada cuando falla un servicio externo o interno."""
 
-    def __init__(self, detail: Optional[Union[str, Dict[str, Any]]] = None) -> None:
+    def __init__(self, detail: str | dict[str, Any] | None = None) -> None:
         super().__init__(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code=ErrorCode.SERVICE_UNAVAILABLE,
@@ -190,7 +190,8 @@ def handle_error(error: AppError) -> HTTPException:
     """Convierte un AppError en una HTTPException para FastAPI."""
     return HTTPException(
         status_code=error.status_code,
-        detail=error.to_dict().get("error"),  # Usamos to_dict() para el formato estándar
+        detail=error.to_dict().get(
+            "error"
+        ),  # Usamos to_dict() para el formato estándar
         headers=error.headers,
     )
-
