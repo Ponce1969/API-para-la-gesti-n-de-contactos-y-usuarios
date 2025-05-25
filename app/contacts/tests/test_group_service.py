@@ -1,6 +1,7 @@
-import pytest
 from datetime import datetime
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Mocks para evitar importaciones problemáticas
 Success = MagicMock()
@@ -11,18 +12,51 @@ Failure = MagicMock()
 Failure.is_failure = lambda: True
 Failure.failure = lambda: None
 
+
 # Clases mock para errores
-class DatabaseError(Exception): pass
-class ContactNotFoundError(Exception): pass
-class ContactAlreadyExistsError(Exception): pass
-class ContactValidationError(Exception): pass
-class UnauthorizedContactAccessError(Exception): pass
-class ContactGroupNotFoundError(Exception): pass
-class ContactGroupAlreadyExistsError(Exception): pass
-class ContactGroupValidationError(Exception): pass
-class UnauthorizedGroupAccessError(Exception): pass
-class ContactAlreadyInGroupError(Exception): pass
-class ContactNotInGroupError(Exception): pass
+class DatabaseError(Exception):
+    pass
+
+
+class ContactNotFoundError(Exception):
+    pass
+
+
+class ContactAlreadyExistsError(Exception):
+    pass
+
+
+class ContactValidationError(Exception):
+    pass
+
+
+class UnauthorizedContactAccessError(Exception):
+    pass
+
+
+class ContactGroupNotFoundError(Exception):
+    pass
+
+
+class ContactGroupAlreadyExistsError(Exception):
+    pass
+
+
+class ContactGroupValidationError(Exception):
+    pass
+
+
+class UnauthorizedGroupAccessError(Exception):
+    pass
+
+
+class ContactAlreadyInGroupError(Exception):
+    pass
+
+
+class ContactNotInGroupError(Exception):
+    pass
+
 
 # Mocks para modelos, repositorios y servicios
 Contact = MagicMock()
@@ -31,9 +65,14 @@ ContactRepository = MagicMock()
 ContactGroupRepository = MagicMock()
 ContactGroupService = MagicMock()
 
+
 # Mocks para schemas
-class ContactGroupCreate(MagicMock): pass
-class ContactGroupUpdate(MagicMock): pass
+class ContactGroupCreate(MagicMock):
+    pass
+
+
+class ContactGroupUpdate(MagicMock):
+    pass
 
 
 @pytest.fixture
@@ -105,8 +144,9 @@ class TestContactGroupService:
     async def test_get_group_by_id_not_found(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "get_by_id", 
-            return_value=Failure(ContactGroupNotFoundError(1))
+            ContactGroupRepository,
+            "get_by_id",
+            return_value=Failure(ContactGroupNotFoundError(1)),
         ) as mock_get_by_id:
             # Act
             result = await ContactGroupService.get_group_by_id(mock_db, 1, 1)
@@ -132,8 +172,13 @@ class TestContactGroupService:
     async def test_get_group_by_name_not_found(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "get_by_name", 
-            return_value=Failure(ContactGroupNotFoundError(0, "No se encontró un grupo con nombre Trabajo"))
+            ContactGroupRepository,
+            "get_by_name",
+            return_value=Failure(
+                ContactGroupNotFoundError(
+                    0, "No se encontró un grupo con nombre Trabajo"
+                )
+            ),
         ) as mock_get_by_name:
             # Act
             result = await ContactGroupService.get_group_by_name(mock_db, "Trabajo", 1)
@@ -164,9 +209,7 @@ class TestContactGroupService:
             ContactGroupRepository, "list_groups", return_value=Success(groups_list)
         ) as mock_list_groups:
             # Act
-            result = await ContactGroupService.list_groups(
-                mock_db, 1, search="Trabajo"
-            )
+            result = await ContactGroupService.list_groups(mock_db, 1, search="Trabajo")
 
             # Assert
             assert result.is_success()
@@ -179,7 +222,9 @@ class TestContactGroupService:
             ContactGroupRepository, "create", return_value=Success(mock_group)
         ) as mock_create:
             # Act
-            result = await ContactGroupService.create_group(mock_db, 1, mock_group_create)
+            result = await ContactGroupService.create_group(
+                mock_db, 1, mock_group_create
+            )
 
             # Assert
             assert result.is_success()
@@ -194,11 +239,14 @@ class TestContactGroupService:
     async def test_create_group_already_exists(self, mock_db, mock_group_create):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "create", 
-            return_value=Failure(ContactGroupAlreadyExistsError("Trabajo", 1))
+            ContactGroupRepository,
+            "create",
+            return_value=Failure(ContactGroupAlreadyExistsError("Trabajo", 1)),
         ) as mock_create:
             # Act
-            result = await ContactGroupService.create_group(mock_db, 1, mock_group_create)
+            result = await ContactGroupService.create_group(
+                mock_db, 1, mock_group_create
+            )
 
             # Assert
             assert result.is_failure()
@@ -211,7 +259,9 @@ class TestContactGroupService:
             ContactGroupRepository, "update", return_value=Success(mock_group)
         ) as mock_update:
             # Act
-            result = await ContactGroupService.update_group(mock_db, 1, 1, mock_group_update)
+            result = await ContactGroupService.update_group(
+                mock_db, 1, 1, mock_group_update
+            )
 
             # Assert
             assert result.is_success()
@@ -221,11 +271,14 @@ class TestContactGroupService:
     async def test_update_group_not_found(self, mock_db, mock_group_update):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "update", 
-            return_value=Failure(ContactGroupNotFoundError(1))
+            ContactGroupRepository,
+            "update",
+            return_value=Failure(ContactGroupNotFoundError(1)),
         ) as mock_update:
             # Act
-            result = await ContactGroupService.update_group(mock_db, 1, 1, mock_group_update)
+            result = await ContactGroupService.update_group(
+                mock_db, 1, 1, mock_group_update
+            )
 
             # Assert
             assert result.is_failure()
@@ -248,8 +301,9 @@ class TestContactGroupService:
     async def test_delete_group_not_found(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "delete", 
-            return_value=Failure(ContactGroupNotFoundError(1))
+            ContactGroupRepository,
+            "delete",
+            return_value=Failure(ContactGroupNotFoundError(1)),
         ) as mock_delete:
             # Act
             result = await ContactGroupService.delete_group(mock_db, 1, 1)
@@ -277,8 +331,9 @@ class TestContactGroupService:
     async def test_add_contact_to_group_contact_not_found(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "add_contact_to_group", 
-            return_value=Failure(ContactNotFoundError(1))
+            ContactGroupRepository,
+            "add_contact_to_group",
+            return_value=Failure(ContactNotFoundError(1)),
         ) as mock_add:
             # Act
             result = await ContactGroupService.add_contact_to_group(
@@ -293,8 +348,9 @@ class TestContactGroupService:
     async def test_add_contact_to_group_already_in_group(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "add_contact_to_group", 
-            return_value=Failure(ContactAlreadyInGroupError(1, 1))
+            ContactGroupRepository,
+            "add_contact_to_group",
+            return_value=Failure(ContactAlreadyInGroupError(1, 1)),
         ) as mock_add:
             # Act
             result = await ContactGroupService.add_contact_to_group(
@@ -309,7 +365,9 @@ class TestContactGroupService:
     async def test_remove_contact_from_group_success(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "remove_contact_from_group", return_value=Success(None)
+            ContactGroupRepository,
+            "remove_contact_from_group",
+            return_value=Success(None),
         ) as mock_remove:
             # Act
             result = await ContactGroupService.remove_contact_from_group(
@@ -324,8 +382,9 @@ class TestContactGroupService:
     async def test_remove_contact_from_group_not_in_group(self, mock_db):
         # Arrange
         with patch.object(
-            ContactGroupRepository, "remove_contact_from_group", 
-            return_value=Failure(ContactNotInGroupError(1, 1))
+            ContactGroupRepository,
+            "remove_contact_from_group",
+            return_value=Failure(ContactNotInGroupError(1, 1)),
         ) as mock_remove:
             # Act
             result = await ContactGroupService.remove_contact_from_group(

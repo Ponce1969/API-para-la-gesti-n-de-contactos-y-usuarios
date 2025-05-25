@@ -1,26 +1,32 @@
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # Evitamos importaciones problemáticas utilizando mocks
 AsyncSession = MagicMock()
+
 
 # Creamos clases mock para los schemas
 class ContactCreate(MagicMock):
     pass
 
+
 class ContactUpdate(MagicMock):
     pass
+
 
 class ContactGroupCreate(MagicMock):
     pass
 
+
 class ContactGroupUpdate(MagicMock):
     pass
 
+
 # Patcheamos los módulos para evitar importaciones reales
-patch('app.contacts.models.Contact', MagicMock()).start()
-patch('app.contacts.models.ContactGroup', MagicMock()).start()
+patch("app.contacts.models.Contact", MagicMock()).start()
+patch("app.contacts.models.ContactGroup", MagicMock()).start()
 
 
 @pytest.fixture

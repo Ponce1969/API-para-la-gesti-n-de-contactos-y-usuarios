@@ -1,6 +1,7 @@
-import pytest
 from datetime import datetime
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Mocks para evitar importaciones problemáticas
 Success = MagicMock()
@@ -11,18 +12,51 @@ Failure = MagicMock()
 Failure.is_failure = lambda: True
 Failure.failure = lambda: None
 
+
 # Clases mock para errores
-class DatabaseError(Exception): pass
-class ContactNotFoundError(Exception): pass
-class ContactAlreadyExistsError(Exception): pass
-class ContactValidationError(Exception): pass
-class UnauthorizedContactAccessError(Exception): pass
-class ContactGroupNotFoundError(Exception): pass
-class ContactGroupAlreadyExistsError(Exception): pass
-class ContactGroupValidationError(Exception): pass
-class UnauthorizedGroupAccessError(Exception): pass
-class ContactAlreadyInGroupError(Exception): pass
-class ContactNotInGroupError(Exception): pass
+class DatabaseError(Exception):
+    pass
+
+
+class ContactNotFoundError(Exception):
+    pass
+
+
+class ContactAlreadyExistsError(Exception):
+    pass
+
+
+class ContactValidationError(Exception):
+    pass
+
+
+class UnauthorizedContactAccessError(Exception):
+    pass
+
+
+class ContactGroupNotFoundError(Exception):
+    pass
+
+
+class ContactGroupAlreadyExistsError(Exception):
+    pass
+
+
+class ContactGroupValidationError(Exception):
+    pass
+
+
+class UnauthorizedGroupAccessError(Exception):
+    pass
+
+
+class ContactAlreadyInGroupError(Exception):
+    pass
+
+
+class ContactNotInGroupError(Exception):
+    pass
+
 
 # Mock para los repositorios
 ContactRepository = MagicMock()
@@ -112,15 +146,15 @@ class TestContactRepository:
         # Arrange
         mock_execute = AsyncMock()
         mock_db.execute = mock_execute
-        
+
         # Primera llamada para verificar si existe con owner_id
         mock_result_1 = MagicMock()
         mock_result_1.scalars.return_value.first.return_value = None
-        
+
         # Segunda llamada para verificar si existe sin owner_id
         mock_result_2 = MagicMock()
         mock_result_2.scalar_one_or_none.return_value = MagicMock(spec=Contact)
-        
+
         mock_execute.side_effect = [mock_result_1, mock_result_2]
 
         # Act
@@ -173,10 +207,12 @@ class TestContactRepository:
         mock_db.flush = AsyncMock()
         mock_db.refresh = AsyncMock()
         mock_db.commit = AsyncMock()
-        
+
         # Mock de get_by_email para simular que no existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_email', return_value=Failure(ContactNotFoundError(0, "No encontrado"))
+            ContactRepository,
+            "get_by_email",
+            return_value=Failure(ContactNotFoundError(0, "No encontrado")),
         ) as mock_get_by_email:
             # Act
             result = await ContactRepository.create(
@@ -200,7 +236,7 @@ class TestContactRepository:
         # Arrange
         # Mock de get_by_email para simular que existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_email', return_value=Success(mock_contact)
+            ContactRepository, "get_by_email", return_value=Success(mock_contact)
         ) as mock_get_by_email:
             # Act
             result = await ContactRepository.create(
@@ -218,7 +254,7 @@ class TestContactRepository:
 
     async def test_create_contact_validation_error(self, mock_db):
         # Arrange - No se proporcionan campos identificativos
-        
+
         # Act
         result = await ContactRepository.create(
             mock_db,
@@ -234,10 +270,12 @@ class TestContactRepository:
         mock_db.add = MagicMock()
         mock_db.flush = AsyncMock(side_effect=SQLAlchemyError("Error de base de datos"))
         mock_db.rollback = AsyncMock()
-        
+
         # Mock de get_by_email para simular que no existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_email', return_value=Failure(ContactNotFoundError(0, "No encontrado"))
+            ContactRepository,
+            "get_by_email",
+            return_value=Failure(ContactNotFoundError(0, "No encontrado")),
         ):
             # Act
             result = await ContactRepository.create(
@@ -257,10 +295,10 @@ class TestContactRepository:
         # Arrange
         mock_db.commit = AsyncMock()
         mock_db.refresh = AsyncMock()
-        
+
         # Mock de get_by_id para simular que existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_id', return_value=Success(mock_contact)
+            ContactRepository, "get_by_id", return_value=Success(mock_contact)
         ) as mock_get_by_id:
             # Act
             result = await ContactRepository.update(
@@ -276,7 +314,7 @@ class TestContactRepository:
             mock_db.commit.assert_called_once()
             mock_db.refresh.assert_called_once()
             mock_get_by_id.assert_called_once()
-            
+
             # Verificar que se actualizaron los campos
             contact = result.unwrap()
             assert contact.first_name == "Juan Actualizado"
@@ -286,7 +324,9 @@ class TestContactRepository:
         # Arrange
         # Mock de get_by_id para simular que no existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_id', return_value=Failure(ContactNotFoundError(1))
+            ContactRepository,
+            "get_by_id",
+            return_value=Failure(ContactNotFoundError(1)),
         ) as mock_get_by_id:
             # Act
             result = await ContactRepository.update(
@@ -306,10 +346,10 @@ class TestContactRepository:
         mock_db.delete = AsyncMock()
         mock_db.flush = AsyncMock()
         mock_db.commit = AsyncMock()
-        
+
         # Mock de get_by_id para simular que existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_id', return_value=Success(mock_contact)
+            ContactRepository, "get_by_id", return_value=Success(mock_contact)
         ) as mock_get_by_id:
             # Act
             result = await ContactRepository.delete(
@@ -320,7 +360,9 @@ class TestContactRepository:
 
             # Assert
             assert result.is_success()
-            assert result.unwrap() is None  # El método delete devuelve None en caso de éxito
+            assert (
+                result.unwrap() is None
+            )  # El método delete devuelve None en caso de éxito
             mock_db.delete.assert_called_once_with(mock_contact)
             mock_db.flush.assert_called_once()
             mock_db.commit.assert_called_once()
@@ -330,7 +372,9 @@ class TestContactRepository:
         # Arrange
         # Mock de get_by_id para simular que no existe el contacto
         with patch.object(
-            ContactRepository, 'get_by_id', return_value=Failure(ContactNotFoundError(1))
+            ContactRepository,
+            "get_by_id",
+            return_value=Failure(ContactNotFoundError(1)),
         ) as mock_get_by_id:
             # Act
             result = await ContactRepository.delete(
