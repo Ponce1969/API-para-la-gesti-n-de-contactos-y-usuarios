@@ -4,60 +4,56 @@ Módulo de gestión de contactos.
 Este módulo maneja la lógica de negocio, modelos y rutas para la gestión
 de contactos y grupos de contactos en la aplicación.
 """
-from . import models, schemas, service, errors, api
-from .models import Contact, ContactGroup, ContactGroupMember
+
+from . import errors, models, schemas
+
+# Importar modelos
+from .models import Contact, ContactGroup, contact_group_members
+
+# Importar esquemas
 from .schemas import (
     ContactCreate,
-    ContactUpdate,
-    ContactResponse,
-    ContactInDB,
     ContactGroupCreate,
     ContactGroupResponse,
     ContactGroupUpdate,
-)
-from .service import (
-    get_contact_by_id,
-    get_contacts,
-    create_contact,
-    update_contact,
-    delete_contact,
-    get_contact_group_by_id,
-    get_contact_groups,
-    create_contact_group,
-    update_contact_group,
-    delete_contact_group,
-    add_contact_to_group,
-    remove_contact_from_group,
-    get_contacts_in_group,
+    ContactInDB,
+    ContactResponse,
+    ContactUpdate,
+    ContactListResponse,
+    ContactGroupListResponse,
 )
 
+# Importar servicios
+from .service import ContactService, ContactGroupService
+
+# Importar enrutador para la API
+from .handlers import router as contact_router
 __all__ = [
-    'models',
-    'schemas',
-    'service',
-    'errors',
-    'api',
-    'Contact',
-    'ContactGroup',
-    'ContactGroupMember',
-    'ContactCreate',
-    'ContactUpdate',
-    'ContactResponse',
-    'ContactInDB',
-    'ContactGroupCreate',
-    'ContactGroupResponse',
-    'ContactGroupUpdate',
-    'get_contact_by_id',
-    'get_contacts',
-    'create_contact',
-    'update_contact',
-    'delete_contact',
-    'get_contact_group_by_id',
-    'get_contact_groups',
-    'create_contact_group',
-    'update_contact_group',
-    'delete_contact_group',
-    'add_contact_to_group',
-    'remove_contact_from_group',
-    'get_contacts_in_group',
+    # Módulos
+    "models",
+    "schemas",
+    "errors",
+    
+    # Modelos
+    "Contact",
+    "ContactGroup",
+    "contact_group_members",
+    
+    # Esquemas
+    "ContactCreate",
+    "ContactUpdate",
+    "ContactResponse",
+    "ContactInDB",
+    "ContactListResponse",
+    "ContactGroupCreate",
+    "ContactGroupUpdate",
+    "ContactGroupResponse",
+    "ContactGroupListResponse",
+    
+    # Servicios
+    "ContactService",
+    "ContactGroupService",
+    
+    # Router
+    "contact_router",
 ]
