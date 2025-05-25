@@ -185,7 +185,7 @@ class ContactRepository:
                     return Failure(ContactAlreadyExistsError(email, owner_id))
 
             # Crear nuevo contacto
-            now = datetime.utcnow()
+            now = datetime.now(datetime.timezone.utc)
             new_contact = Contact(
                 owner_id=owner_id,
                 first_name=first_name,
@@ -266,7 +266,7 @@ class ContactRepository:
                 if hasattr(contact, key):
                     setattr(contact, key, value)
 
-            contact.updated_at = datetime.utcnow()
+            contact.updated_at = datetime.now(datetime.timezone.utc)
             await db.commit()
             await db.refresh(contact)
 
@@ -497,7 +497,7 @@ class ContactGroupRepository:
                 return Failure(ContactGroupAlreadyExistsError(name, owner_id))
 
             # Crear nuevo grupo
-            now = datetime.utcnow()
+            now = datetime.now(datetime.timezone.utc)
             new_group = ContactGroup(
                 owner_id=owner_id,
                 name=name,
@@ -569,7 +569,7 @@ class ContactGroupRepository:
                 if hasattr(group, key):
                     setattr(group, key, value)
 
-            group.updated_at = datetime.utcnow()
+            group.updated_at = datetime.now(datetime.timezone.utc)
             await db.commit()
             await db.refresh(group)
 
@@ -684,7 +684,7 @@ class ContactGroupRepository:
                 contact_id=contact_id,
                 group_id=group_id,
                 notes=notes,
-                added_at=datetime.utcnow(),
+                added_at=datetime.now(datetime.timezone.utc),
             )
             await db.execute(insert_stmt)
             await db.commit()
