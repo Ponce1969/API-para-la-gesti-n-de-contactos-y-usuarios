@@ -3,14 +3,11 @@
 Este módulo proporciona la configuración inicial para SQLAlchemy,
 incluyendo la creación de la sesión de base de datos y la clase Base para los modelos.
 """
+
 from typing import Any, AsyncGenerator, Optional
 
 from sqlalchemy import MetaData
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -32,15 +29,16 @@ metadata = MetaData(naming_convention=convention)
 
 class Base(DeclarativeBase):
     """Clase base para todos los modelos SQLAlchemy.
-    
+
     Proporciona metadatos comunes y métodos de utilidad para todos los modelos.
     """
+
     metadata = metadata
-    
+
     def dict(self) -> dict[str, Any]:
         """Convierte el modelo a un diccionario."""
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-    
+
     def update(self, **kwargs: Any) -> None:
         """Actualiza los atributos del modelo con los valores proporcionados."""
         for key, value in kwargs.items():
@@ -70,12 +68,12 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Obtiene una sesión de base de datos.
-    
+
     Uso:
         async with get_db() as db:
             # Usar la sesión db aquí
             result = await db.execute(query)
-    
+
     Yields:
         AsyncSession: Sesión de base de datos asíncrona
     """
