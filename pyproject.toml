@@ -2,6 +2,12 @@
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
+[project]
+name = "app_statica"
+version = "0.1.0"
+requires-python = ">=3.10"
+
 [tool.black]
 line-length = 88
 target-version = ['py310']
@@ -38,9 +44,15 @@ addopts = "--strict-markers -v"
 [tool.ruff]
 target-version = "py310"
 line-length = 88
+
+[tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "UP", "ANN", "RUF"]
 ignore = ["E501"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*.py" = ["ANN"]
+
+[tool.setuptools]
+packages = ["app", "migrations"]
+

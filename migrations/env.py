@@ -40,6 +40,7 @@ config.set_section_option(
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.common.database import Base
+
 # Importar todos los modelos para que Alembic los detecte
 from app.contacts.models import Contact, ContactGroup
 from app.roles.models import Permission, Role
