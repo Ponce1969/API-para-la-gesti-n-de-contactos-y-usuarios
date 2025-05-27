@@ -7,7 +7,7 @@ desde variables de entorno, con valores por defecto y tipos fuertes.
 from functools import lru_cache
 from typing import Any
 
-from pydantic import AnyHttpUrl, EmailStr, Field, field_validator, model_validator
+from pydantic import AnyHttpUrl, EmailStr, Field, field_validator, model_validator, SecretStr # Import SecretStr
 from pydantic.networks import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -62,10 +62,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 días
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     JWT_ALGORITHM: str = "HS256"
-    JWT_SECRET_KEY: str = (
+    JWT_SECRET_KEY: SecretStr = SecretStr( # Changed to SecretStr
         "django-insecure-9f8h7g6f5d4s3a2s1d0a9s8d7f6g5h4j3k2l1q0w9e8r7t6y5"
     )
-    JWT_REFRESH_SECRET_KEY: str = (
+    JWT_REFRESH_SECRET_KEY: SecretStr = SecretStr( # Changed to SecretStr
         "django-insecure-9f8h7g6f5d4s3a2s1d0a9s8d7f6g5h4j3k2l1q0w9e8r7t6y6"
     )
 

@@ -13,10 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_active_superuser, get_current_active_user
 from app.common.database import get_db
 from app.common.errors import DatabaseError, ResourceNotFoundError
-from app.users import schemas as user_schemas # Importar esquemas de usuario
+from app.users import models as user_models # Importar modelos de usuario
+from app.users import schemas as user_schemas # Importar esquemas de usuario, aunque no se usará para current_user
 
 from . import schemas, service
-from .models import Permission, Role
+# from .models import Permission, Role # Models are typically not directly used in API layer, service layer handles them
 from .schemas import (
     PermissionResponse,
     RoleCreate,
@@ -39,7 +40,7 @@ router = APIRouter()
 )
 async def create_role(
     role_data: RoleCreate,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_superuser),
+    current_user: user_models.User = Depends(get_current_active_superuser), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> RoleResponse:
     """
@@ -80,7 +81,7 @@ async def create_role(
 async def list_roles(
     skip: int = 0,
     limit: int = 100,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_user),
+    current_user: user_models.User = Depends(get_current_active_user), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> List[RoleResponse]:
     """
@@ -120,7 +121,7 @@ async def list_roles(
 )
 async def get_role(
     role_id: int,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_user),
+    current_user: user_models.User = Depends(get_current_active_user), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> RoleResponse:
     """
@@ -169,7 +170,7 @@ async def get_role(
 async def update_role(
     role_id: int,
     role_data: RoleUpdate,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_superuser),
+    current_user: user_models.User = Depends(get_current_active_superuser), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> RoleResponse:
     """
@@ -220,7 +221,7 @@ async def update_role(
 )
 async def delete_role(
     role_id: int,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_superuser),
+    current_user: user_models.User = Depends(get_current_active_superuser), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
@@ -264,7 +265,7 @@ async def delete_role(
     description="Obtiene una lista de todos los permisos del sistema.",
 )
 async def list_permissions(
-    current_user: user_schemas.UserResponse = Depends(get_current_active_user),
+    current_user: user_models.User = Depends(get_current_active_user), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> List[PermissionResponse]:
     """
@@ -305,7 +306,7 @@ async def list_permissions(
 async def add_permission_to_role(
     role_id: int,
     permission_data: RolePermissionCreate,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_superuser),
+    current_user: user_models.User = Depends(get_current_active_superuser), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> RolePermissionResponse:
     """
@@ -365,7 +366,7 @@ async def add_permission_to_role(
 async def remove_permission_from_role(
     role_id: int,
     permission_id: int,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_superuser),
+    current_user: user_models.User = Depends(get_current_active_superuser), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
@@ -412,7 +413,7 @@ async def remove_permission_from_role(
 )
 async def get_role_permissions(
     role_id: int,
-    current_user: user_schemas.UserResponse = Depends(get_current_active_user),
+    current_user: user_models.User = Depends(get_current_active_user), # Changed type
     db: AsyncSession = Depends(get_db),
 ) -> List[PermissionResponse]:
     """

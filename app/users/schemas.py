@@ -76,6 +76,8 @@ class UserInDB(UserBase):
 
     id: int = Field(default=..., description="ID único del usuario")
     hashed_password: str = Field(default=..., description="Hash de la contraseña")
+    first_name: str | None = Field(default=None, description="Nombre(s) del usuario") # Modelo User tiene first_name/last_name
+    last_name: str | None = Field(default=None, description="Apellido(s) del usuario") # Modelo User tiene first_name/last_name
     created_at: datetime = Field(
         default=..., description="Fecha de creación del usuario"
     )
@@ -83,13 +85,14 @@ class UserInDB(UserBase):
         default=..., description="Fecha de última actualización"
     )
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
             "example": {
                 "id": 1,
                 "email": "usuario@ejemplo.com",
-                "full_name": "Nombre Apellido",
+                "first_name": "Nombre",
+                "last_name": "Apellido",
                 "is_active": True,
                 "is_superuser": False,
                 "is_verified": True,
@@ -98,55 +101,66 @@ class UserInDB(UserBase):
                 "updated_at": "2023-01-01T00:00:00",
             }
         }
+    }
 
 
-# Esquemas para respuesta
-class UserResponse(BaseResponse):
-    """Esquema para la respuesta de un usuario."""
+# Esquema para datos públicos del usuario (sin campos sensibles)
+class UserPublic(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    is_active: bool
+    is_superuser: bool
+    is_verified: bool
+    created_at: datetime
+    updated_at: datetime
 
-    data: dict | None = Field(
-        None,
-        example={
-            "id": 1,
-            "email": "usuario@ejemplo.com",
-            "full_name": "Nombre Apellido",
-            "is_active": True,
-            "is_superuser": False,
-            "is_verified": True,
-            "created_at": "2023-01-01T00:00:00",
-            "updated_at": "2023-01-01T00:00:00",
-        },
-    )
-
-
-class UserListResponse(PaginatedResponse):
-    """Esquema para la respuesta de una lista de usuarios."""
-
-    data: list[dict] = Field(
-        ...,
-        example=[
-            {
+    model_config = {
+        "from_attributes": True, # Permite crear desde instancias de modelo SQLAlchemy
+        "json_schema_extra": {
+            "example": {
                 "id": 1,
-                "email": "usuario1@ejemplo.com",
-                "full_name": "Usuario Uno",
+                "email": "usuario@ejemplo.com",
+                "full_name": "Nombre Apellido", # Podría ser una propiedad del modelo User
+                "first_name": "Nombre",
+                "last_name": "Apellido",
                 "is_active": True,
                 "is_superuser": False,
                 "is_verified": True,
                 "created_at": "2023-01-01T00:00:00",
                 "updated_at": "2023-01-01T00:00:00",
-            },
-            {
-                "id": 2,
-                "email": "usuario2@ejemplo.com",
-                "full_name": "Usuario Dos",
-                "is_active": True,
-                "is_superuser": False,
-                "is_verified": True,
-                "created_at": "2023-01-02T00:00:00",
-                "updated_at": "2023-01-02T00:00:00",
-            },
-        ],
-    )
+            }
+        }
+    }
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def assemble_full_name(cls, v, values):
+        if isinstance(v, str):
+            return v
+        first_name = values.data.get("first_name")
+        last_name = values.data.get("last_name")
+        if first_name and last_name:
+            return f"{first_name} {last_name}"
+        return first_name or last_name or ""
+
+
+# Esquemas para respuesta
+class UserResponse(BaseResponse):
+    """Esquema para la respuesta de un usuario."""
+    data: UserPublic | None = None
+
+
+class UserListResponse(PaginatedResponse[UserPublic]):
+    """Esquema para la respuesta de una lista de usuarios."""
+    # La clase base PaginatedResponse[T] ya define 'items: list[T]'
+    # No es necesario redefinir 'data' aquí si 'items' es el campo deseado.
+    # Si se quiere mantener 'data' como el nombre del campo, se debe sobrescribir.
+    # Por consistencia con BaseResponse, mantendremos 'data'
+    data: list[UserPublic] | None = Field(None, description="Lista de usuarios")
+    # pagination: dict | None = Field(None, description="Información de paginación") # Ya en PaginatedResponse
 
 
 # Esquema para autenticación
@@ -155,7 +169,7 @@ class Token(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
-    user: dict
+    user: UserPublic # Usar el esquema público
 
 
 class TokenData(BaseModel):
@@ -198,8 +212,7 @@ class VerificationTokenInDBBase(VerificationTokenBase):
     created_at: datetime = Field(..., description="Fecha y hora de creación del token.")
     is_used: bool = Field(..., description="Indica si el token ya ha sido utilizado.")
 
-    class Config:
-        from_attributes = True  # Para Pydantic v2
+    model_config = {"from_attributes": True}
 
 
 class VerificationTokenInDB(VerificationTokenInDBBase):
@@ -248,43 +261,29 @@ class EmailVerifyRequest(BaseModel):
 
 
 # Esquema para la respuesta de autenticación
+class AuthResponseData(BaseModel):
+    token: Token
+    user: UserPublic
+
 class AuthResponse(BaseResponse):
     """Esquema para la respuesta de autenticación."""
-
-    data: dict | None = Field(
-        None,
-        example={
-            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-            "token_type": "bearer",
-            "user": {
-                "id": 1,
-                "email": "usuario@ejemplo.com",
-                "full_name": "Nombre Apellido",
-                "is_active": True,
-                "is_superuser": False,
-                "is_verified": True,
-            },
-        },
-    )
+    data: AuthResponseData | None = None
 
 
 # Esquema para la respuesta de verificación de correo
+class EmailVerifyResponseData(BaseModel):
+    message: str
+    user: UserPublic # O un subconjunto más pequeño si es preferible
+
 class EmailVerifyResponse(BaseResponse):
     """Esquema para la respuesta de verificación de correo."""
-
-    data: dict | None = Field(
-        None,
-        example={
-            "message": "Correo verificado exitosamente",
-            "user": {"id": 1, "email": "usuario@ejemplo.com", "is_verified": True},
-        },
-    )
+    data: EmailVerifyResponseData | None = None
 
 
 # Esquema para la respuesta de restablecimiento de contraseña
+class PasswordResetResponseData(BaseModel):
+    message: str
+
 class PasswordResetResponse(BaseResponse):
     """Esquema para la respuesta de restablecimiento de contraseña."""
-
-    data: dict | None = Field(
-        None, example={"message": "Contraseña actualizada exitosamente"}
-    )
+    data: PasswordResetResponseData | None = None

@@ -49,8 +49,13 @@ class VerificationTokenNotFoundError(AppError):
             message += f" ({', '.join(details)})."
         else:
             message += "."
-
-        super().__init__(message, status_code=404)
+        
+        from app.common.errors import ErrorCode # Import ErrorCode
+        super().__init__(
+            status_code=404,
+            message=message,
+            code=ErrorCode.RESOURCE_NOT_FOUND # Or a more specific code if defined
+        )
 
 
 class TokenInvalidError(AppError):
@@ -59,8 +64,11 @@ class TokenInvalidError(AppError):
     def __init__(self, token_value: str, reason: str) -> None:
         self.token_value = token_value
         self.reason = reason
+        from app.common.errors import ErrorCode # Import ErrorCode
         super().__init__(
-            f"Token inválido: {token_value}. Razón: {reason}", status_code=400
+            status_code=400,
+            message=f"Token inválido: {token_value}. Razón: {reason}",
+            code=ErrorCode.INVALID_TOKEN # Or a more specific code if defined
         )
 
 
@@ -68,10 +76,10 @@ class UserAlreadyExistsError(AppError):
     """Excepción lanzada cuando se intenta crear un usuario que ya existe."""
 
     def __init__(self, email: str) -> None:
+        from app.common.errors import ErrorCode
+
         super().__init__(
-            detail=f"El usuario con el correo electrónico '{email}' ya existe.",
-            # Puedes asignar un ErrorCode más específico si lo defines en common.errors.ErrorCode
-            # code=ErrorCode.USER_ALREADY_EXISTS
+            message=f"El usuario con el correo electrónico '{email}' ya existe.",
+            code=ErrorCode.DUPLICATE_ENTRY,
+            status_code=409,  # Conflict
         )
-        # Sobrescribimos el código de error si queremos uno más específico que DUPLICATE_ENTRY
-        # self.code = "USER_001" # Ejemplo

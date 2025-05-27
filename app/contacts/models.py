@@ -4,9 +4,9 @@ Este módulo define los modelos de base de datos relacionados con los contactos 
 utilizando SQLAlchemy ORM con soporte asíncrono.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone # Import timezone
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Any # Import Any
 
 from sqlalchemy import Boolean, Column, DateTime
 from sqlalchemy import Enum as SQLEnum
@@ -104,7 +104,7 @@ class Contact(Base):
     notes: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="Notas adicionales sobre el contacto"
     )
-    custom_fields: Mapped[Optional[dict]] = mapped_column(
+    custom_fields: Mapped[Optional[Dict[str, Any]]] = mapped_column( # Use Dict from typing
         JSONB,
         nullable=True,
         comment="Campos personalizados adicionales en formato JSON",
@@ -152,15 +152,15 @@ class Contact(Base):
 
     # Auditoría
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True), # Ensure timezone aware
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="Fecha y hora de creación del contacto",
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True), # Ensure timezone aware
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="Fecha y hora de la última actualización del contacto",
     )
@@ -220,15 +220,15 @@ class ContactGroup(Base):
 
     # Auditoría
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True), # Ensure timezone aware
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="Fecha y hora de creación del grupo",
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True), # Ensure timezone aware
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="Fecha y hora de la última actualización del grupo",
     )
@@ -253,7 +253,7 @@ contact_group_members = Table(
         ForeignKey("contact_groups.id", ondelete="CASCADE"),
         primary_key=True,
     ),
-    Column("added_at", DateTime, default=datetime.utcnow, nullable=False),
+    Column("added_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False), # Ensure timezone aware
     Column(
         "notes", Text, nullable=True, comment="Notas sobre la pertenencia a este grupo"
     ),

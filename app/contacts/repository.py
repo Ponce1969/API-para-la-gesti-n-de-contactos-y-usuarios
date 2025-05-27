@@ -6,7 +6,7 @@ utilizando SQLAlchemy con soporte asíncrono y el patrón Result para manejo fun
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone # Ensure timezone is imported
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from returns.result import Failure, Result, Success

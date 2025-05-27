@@ -105,9 +105,12 @@ class ContactService:
                 db, group_id, owner_id
             )
             if group_result.is_failure():
-                return group_result
+                # If the group is not found or not authorized, and group_id was specified,
+                # this error should be returned.
+                return Failure(group_result.failure()) # Propagate the error
 
-        return await ContactGroupRepository.list_contacts(
+        # Call ContactRepository.list_contacts instead of ContactGroupRepository.list_contacts
+        return await ContactRepository.list_contacts(
             db=db,
             owner_id=owner_id,
             skip=skip,
@@ -175,11 +178,14 @@ class ContactService:
         Returns:
             Result con el contacto actualizado si la operación es exitosa, o un error apropiado si no.
         """
-        # Convertir el modelo Pydantic a un diccionario excluyendo valores None
-        update_data = contact_data.dict(exclude_unset=True)
+        # Convertir el modelo Pydantic a un diccionario excluyendo valores unset
+        update_data = contact_data.model_dump(exclude_unset=True)
 
-        # Eliminar campos None para no sobrescribir valores existentes con None
-        update_data = {k: v for k, v in update_data.items() if v is not None}
+        # No need to manually filter out None values if using exclude_unset=True,
+        # as model_dump with exclude_unset=True only includes fields that were explicitly set.
+        # However, if the intention is to ensure that even explicitly set None values are removed
+        # before passing to the repository, then the dict comprehension is still needed.
+        # For now, assuming exclude_unset=True is sufficient.
 
         # Convertir enums a strings para la base de datos
         if 'contact_type' in update_data and update_data['contact_type'] is not None:
@@ -325,11 +331,12 @@ class ContactGroupService:
         Returns:
             Result con el grupo actualizado si la operación es exitosa, o un error apropiado si no.
         """
-        # Convertir el modelo Pydantic a un diccionario excluyendo valores None
-        update_data = group_data.dict(exclude_unset=True)
+        # Convertir el modelo Pydantic a un diccionario excluyendo valores unset
+        update_data = group_data.model_dump(exclude_unset=True)
 
-        # Eliminar campos None para no sobrescribir valores existentes con None
-        update_data = {k: v for k, v in update_data.items() if v is not None}
+        # Similar to update_contact, model_dump(exclude_unset=True) should handle this.
+        # If explicit None removal is desired:
+        # update_data = {k: v for k, v in update_data.items() if v is not None}
 
         return await ContactGroupRepository.update(
             db, group_id, owner_id, **update_data

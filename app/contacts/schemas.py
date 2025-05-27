@@ -69,14 +69,20 @@ class ContactCreate(ContactBase):
 
     # Campos requeridos para la creación
     # Al menos un nombre o apellido debe estar presente
-    @field_validator("first_name", "last_name")
-    def validate_names(cls, v, values):
-        """Valida que al menos uno de los campos de nombre esté presente."""
-        if v is None:
-            # Si estamos validando last_name, verificar si first_name está presente
-            if "first_name" in values and values["first_name"] is None:
-                # Si ambos son None, lanzar error
-                raise ValueError("Al menos un nombre o apellido debe estar presente")
+    @field_validator("first_name")
+    def validate_first_name_or_last_name_present(cls, v, info):
+        """Valida que al menos first_name o last_name esté presente."""
+        if v is None and (info.data.get("last_name") is None and info.data.get("email") is None and info.data.get("phone") is None) :
+            if not info.data.get("last_name"): # Check if last_name is also None or empty
+                 raise ValueError("Se requiere al menos un nombre, apellido, email o teléfono.")
+        return v
+
+    @field_validator("last_name")
+    def validate_last_name_or_first_name_present(cls, v, info):
+        """Valida que al menos first_name o last_name esté presente."""
+        if v is None and (info.data.get("first_name") is None and info.data.get("email") is None and info.data.get("phone") is None):
+            if not info.data.get("first_name"): # Check if first_name is also None or empty
+                 raise ValueError("Se requiere al menos un nombre, apellido, email o teléfono.")
         return v
 
 
@@ -105,8 +111,7 @@ class ContactInDB(ContactBase):
         default=..., description="Fecha y hora de la última actualización del contacto"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # Esquemas para grupos de contactos
@@ -155,132 +160,65 @@ class ContactGroupInDB(ContactGroupBase):
         default=None, description="Número de contactos en este grupo"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+
+
+# Schemas for public representation (excluding owner_id, sensitive fields if any)
+class ContactPublic(ContactBase):
+    id: int
+    contact_user_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    groups: list[dict[str, Any]] = [] # Simplified group info for now
+
+    model_config = {"from_attributes": True}
+
+
+class ContactGroupPublic(ContactGroupBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    contacts_count: int | None = 0
+
+    model_config = {"from_attributes": True}
 
 
 # Esquemas para respuestas de API
 class ContactResponse(BaseResponse):
     """Esquema para la respuesta de un contacto."""
 
-    data: dict | None = Field(
-        None,
-        example={
-            "id": 1,
-            "first_name": "Juan",
-            "last_name": "Pérez",
-            "email": "juan@ejemplo.com",
-            "phone": "+34 612345678",
-            "company": "Empresa S.A.",
-            "position": "Gerente",
-            "contact_type": "work",
-            "status": "active",
-            "is_favorite": True,
-            "address": "Calle Principal 123",
-            "notes": "Cliente importante",
-            "custom_fields": {"proyecto": "Alpha", "prioridad": "Alta"},
-            "owner_id": 1,
-            "contact_user_id": None,
-            "created_at": "2023-01-01T00:00:00",
-            "updated_at": "2023-01-01T00:00:00",
-            "groups": [{"id": 1, "name": "Trabajo"}],
-        },
-    )
+    data: ContactPublic | None = Field(default=None)
 
 
-class ContactListResponse(PaginatedResponse):
+class ContactListResponse(PaginatedResponse[ContactPublic]):
     """Esquema para la respuesta de una lista de contactos."""
-
-    data: list[dict] = Field(
-        ...,
-        example=[
-            {
-                "id": 1,
-                "first_name": "Juan",
-                "last_name": "Pérez",
-                "email": "juan@ejemplo.com",
-                "phone": "+34 612345678",
-                "company": "Empresa S.A.",
-                "contact_type": "work",
-                "status": "active",
-                "is_favorite": True,
-            },
-            {
-                "id": 2,
-                "first_name": "María",
-                "last_name": "García",
-                "email": "maria@ejemplo.com",
-                "phone": "+34 698765432",
-                "company": "Otra Empresa S.L.",
-                "contact_type": "personal",
-                "status": "active",
-                "is_favorite": False,
-            },
-        ],
-    )
+    # Inherits 'items: list[ContactPublic]', 'total', 'page', 'size', 'pages'
+    # If 'data' field is preferred:
+    data: list[ContactPublic] | None = Field(default=None, description="Lista de contactos")
 
 
 class ContactGroupResponse(BaseResponse):
     """Esquema para la respuesta de un grupo de contactos."""
 
-    data: dict | None = Field(
-        None,
-        example={
-            "id": 1,
-            "name": "Trabajo",
-            "description": "Contactos de trabajo",
-            "owner_id": 1,
-            "created_at": "2023-01-01T00:00:00",
-            "updated_at": "2023-01-01T00:00:00",
-            "contacts_count": 5,
-        },
-    )
+    data: ContactGroupPublic | None = Field(default=None)
 
 
-class ContactGroupListResponse(PaginatedResponse):
+class ContactGroupListResponse(PaginatedResponse[ContactGroupPublic]):
     """Esquema para la respuesta de una lista de grupos de contactos."""
-
-    data: list[dict] = Field(
-        ...,
-        example=[
-            {
-                "id": 1,
-                "name": "Trabajo",
-                "description": "Contactos de trabajo",
-                "contacts_count": 5,
-            },
-            {
-                "id": 2,
-                "name": "Familia",
-                "description": "Contactos familiares",
-                "contacts_count": 10,
-            },
-        ],
-    )
+    data: list[ContactGroupPublic] | None = Field(default=None, description="Lista de grupos de contactos")
 
 
-# Esquemas para operaciones con grupos
+# Schemas for specific operation responses
+class ContactGroupAssociationData(BaseModel):
+    message: str
+    contact_id: int
+    group_id: int
+
 class AddContactToGroupResponse(BaseResponse):
     """Esquema para la respuesta de agregar un contacto a un grupo."""
-
-    data: dict | None = Field(
-        None,
-        example={
-            "message": "Contacto agregado al grupo correctamente",
-            "contact_id": 1,
-            "group_id": 2,
-        },
-    )
+    data: ContactGroupAssociationData | None = None
 
 
 class RemoveContactFromGroupResponse(BaseResponse):
     """Esquema para la respuesta de eliminar un contacto de un grupo."""
-
-    data: dict | None = Field(
-        None,
-        example={
-            "message": "Contacto eliminado del grupo correctamente",
-            "contact_id": 1,
-            "group_id": 2,
-        },
-    )
+    data: ContactGroupAssociationData | None = None

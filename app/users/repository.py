@@ -6,7 +6,7 @@ en la base de datos, siguiendo el patrón de repositorio.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone # Import timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from uuid import UUID
 
@@ -69,13 +69,19 @@ class UserRepository:
             if existing_user_result.scalar_one_or_none():
                 return Failure(UserAlreadyExistsError(email=email))
 
+            first_name_val: Optional[str] = None
+            last_name_val: Optional[str] = None
+            if full_name:
+                parts = full_name.split(" ", 1)
+                first_name_val = parts[0]
+                if len(parts) > 1:
+                    last_name_val = parts[1]
+
             db_user = User(
                 email=email,
                 hashed_password=hashed_password,
-                full_name=full_name, # NOTA: El modelo User tiene first_name, last_name.
-                                     # El servicio deberá manejar la conversión de full_name
-                                     # a first_name/last_name si es necesario antes de llamar aquí,
-                                     # o este repositorio debería aceptar first_name/last_name.
+                first_name=first_name_val,
+                last_name=last_name_val,
                 is_active=is_active,
                 is_superuser=is_superuser,
                 is_verified=is_verified,
@@ -185,9 +191,16 @@ class UserRepository:
                 if existing_email_result.scalar_one_or_none():
                     return Failure(UserAlreadyExistsError(email=email))
                 update_values["email"] = email
-            
-            if full_name is not None and hasattr(User, "full_name") and full_name != getattr(user_model_to_update, "full_name", None):
-                 update_values["full_name"] = full_name
+
+            if full_name is not None:
+                # Split full_name into first_name and last_name
+                parts = full_name.split(" ", 1)
+                first_name_val = parts[0]
+                last_name_val = parts[1] if len(parts) > 1 else None
+                if first_name_val != user_model_to_update.first_name:
+                    update_values["first_name"] = first_name_val
+                if last_name_val != user_model_to_update.last_name:
+                    update_values["last_name"] = last_name_val
 
             if hashed_password is not None:
                 update_values["hashed_password"] = hashed_password
@@ -201,7 +214,7 @@ class UserRepository:
             if not update_values: # No hay nada que actualizar
                 return Success(UserInDB.model_validate(user_model_to_update))
 
-            update_values["updated_at"] = datetime.utcnow() # Actualizar manualmente
+            update_values["updated_at"] = datetime.now(timezone.utc) # Actualizar manualmente
 
             stmt = (
                 update(User)
@@ -346,8 +359,9 @@ class UserRepository:
                 # search_term = f"%{search.lower()}%" # No es necesario el lower() aquí si se usa en la columna
                 query = query.where(
                     or_(
-                        User.email.ilike(f"%{search}%"), # ilike ya es case-insensitive para PostgreSQL
-                        func.lower(User.first_name + " " + User.last_name).contains(search.lower())
+                        User.email.ilike(f"%{search}%"),
+                        User.first_name.ilike(f"%{search}%"), # Search in first name
+                        User.last_name.ilike(f"%{search}%") # Search in last name
                     )
                 )
 
@@ -382,7 +396,7 @@ class UserRepository:
             stmt = (
                 update(User)
                 .where(User.id == user_id)
-                .values(last_login_at=datetime.utcnow())  # Corregido: last_login_at
+                .values(last_login=datetime.now(timezone.utc)) # Changed to timezone.utc
             )
             result = await self.db.execute(stmt)
             
@@ -421,7 +435,7 @@ class UserRepository:
                 .where(User.id == user_id)
                 .values(
                     hashed_password=hashed_password,
-                    updated_at=datetime.utcnow()  # Actualizar timestamp
+                    updated_at=datetime.now(timezone.utc)  # Actualizar timestamp
                 )
             )
             result = await self.db.execute(stmt)
@@ -461,7 +475,7 @@ class UserRepository:
             await self.db.refresh(new_token)
             
             # Convertir a esquema Pydantic para el retorno
-            token_in_db = VerificationTokenInDB.from_attributes(new_token) # Usar from_attributes para Pydantic v2
+            token_in_db = VerificationTokenInDB.model_validate(new_token)
             return Success(token_in_db)
         except SQLAlchemyError as e:
             await self.db.rollback()
@@ -493,7 +507,7 @@ class UserRepository:
             if not token_model:
                 return Failure(VerificationTokenNotFoundError(token_value=token_value))
             
-            return Success(VerificationTokenInDB.from_attributes(token_model))
+            return Success(VerificationTokenInDB.model_validate(token_model))
         except SQLAlchemyError as e:
             logger.error(
                 f"Error de BD al obtener token de verificación por valor '{token_value[:10]}...': {str(e)}",
@@ -515,16 +529,15 @@ class UserRepository:
 
             if token_model.is_used:
                 logger.info(f"Token ID {token_id} ya estaba marcado como usado.")
-                return Success(VerificationTokenInDB.from_attributes(token_model))
+                return Success(VerificationTokenInDB.model_validate(token_model))
 
             token_model.is_used = True
-            # token_model.updated_at = datetime.utcnow() # Si VerificationToken tiene updated_at
             
             self.db.add(token_model)
             await self.db.flush()
             await self.db.refresh(token_model)
             
-            return Success(VerificationTokenInDB.from_attributes(token_model))
+            return Success(VerificationTokenInDB.model_validate(token_model))
         except SQLAlchemyError as e:
             await self.db.rollback()
             logger.error(

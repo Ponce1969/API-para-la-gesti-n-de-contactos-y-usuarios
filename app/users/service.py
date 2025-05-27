@@ -4,15 +4,17 @@ from datetime import datetime, timedelta  # Para la expiración del token
 from typing import TYPE_CHECKING
 from uuid import uuid4  # Para el token si se usa UUID
 
-from pydantic import EmailStr
+from pydantic import EmailStr, SecretStr
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.common.hashing import get_password_hash as hash_password # Import and alias
 from app.common.result import Failure, Result, Success
-from app.users.models import User
+from app.users.models import User as UserModel # Alias to avoid conflict if User schema is imported
 
 if TYPE_CHECKING:
-    pass
+    from app.users.models import User as UserModel # Correct TYPE_CHECKING import
+
 from app.common.errors import DatabaseError  # Error genérico de BD y AppError
 from app.users.errors import (
     TokenInvalidError,
@@ -67,15 +69,22 @@ class UserService:
 
         # Si la contraseña está presente en los datos de actualización, debe ser hasheada.
         if "password" in update_kwargs and update_kwargs["password"] is not None:
-            # Asumimos que UserUpdate.password es de tipo Optional[SecretStr] o str
-            # Si es SecretStr, necesitamos get_secret_value()
             password_to_hash = update_kwargs["password"]
-            if hasattr(password_to_hash, "get_secret_value"):  # Check if it's SecretStr
-                hashed_new_password = hash_password(password_to_hash.get_secret_value())
-            else:  # Assume it's a plain string (less ideal for Pydantic models)
-                hashed_new_password = hash_password(password_to_hash)
+            # UserUpdate.password is Optional[str], not SecretStr based on schema.
+            # If it were SecretStr, it would be:
+            # hashed_new_password = hash_password(password_to_hash.get_secret_value())
+            hashed_new_password = hash_password(str(password_to_hash))
             update_kwargs["hashed_password"] = hashed_new_password
-            del update_kwargs["password"]  # Eliminar la contraseña en texto plano
+            del update_kwargs["password"]
+
+        # Manejar full_name si está presente, para dividirlo en first_name y last_name
+        # Esta lógica es similar a la que se necesitaría en el repositorio si aceptara full_name
+        if "full_name" in update_kwargs and update_kwargs["full_name"] is not None:
+            full_name_str = str(update_kwargs["full_name"])
+            name_parts = full_name_str.split(" ", 1)
+            update_kwargs["first_name"] = name_parts[0]
+            update_kwargs["last_name"] = name_parts[1] if len(name_parts) > 1 else None
+            del update_kwargs["full_name"] # Eliminar full_name ya que el repo espera first/last
 
         # El repositorio espera los argumentos como kwargs, no un dict directamente.
         return await self.user_repository.update(user_id=user_id, **update_kwargs)
@@ -156,29 +165,33 @@ class UserService:
                 return Failure(error)  # Propaga el error original del repositorio
 
         # 2. Hashear la contraseña
-        hashed_pass = hash_password(user_data.password.get_secret_value())
+        # UserCreate.password es str, no SecretStr. Si fuera SecretStr:
+        # hashed_pass = hash_password(user_data.password.get_secret_value())
+        hashed_pass = hash_password(user_data.password)
 
-        # 3. Llamar al user_repository.create
-        # El repositorio create espera todos los campos necesarios.
-        # Asumimos que UserCreate tiene first_name y last_name.
+        # 3. Preparar datos para el repositorio, incluyendo división de full_name
+        first_name_val: str | None = None
+        last_name_val: str | None = None
+        if user_data.full_name:
+            parts = user_data.full_name.split(" ", 1)
+            first_name_val = parts[0]
+            if len(parts) > 1:
+                last_name_val = parts[1]
+
         # is_active podría ser False por defecto hasta la verificación por email.
-        create_user_params = {
+        repo_create_params = {
             "email": user_data.email,
             "hashed_password": hashed_pass,
-            "first_name": user_data.first_name,
-            "last_name": user_data.last_name,
-            "is_active": (
-                user_data.is_active if user_data.is_active is not None else False
-            ),  # Default False, activar tras verificación
-            "is_superuser": (
-                user_data.is_superuser if user_data.is_superuser is not None else False
-            ),
-            "is_verified": (
-                user_data.is_verified if user_data.is_verified is not None else False
-            ),  # Default False
+            "first_name": first_name_val, # Usar los valores divididos
+            "last_name": last_name_val,   # Usar los valores divididos
+            "is_active": user_data.is_active if user_data.is_active is not None else False,
+            "is_superuser": user_data.is_superuser if user_data.is_superuser is not None else False,
+            "is_verified": user_data.is_verified if user_data.is_verified is not None else False,
         }
+        # Eliminar full_name de los parámetros si UserRepository.create no lo espera
+        # (actualmente UserRepository.create espera first_name, last_name)
 
-        created_user_result = await self.user_repository.create(**create_user_params)
+        created_user_result = await self.user_repository.create(**repo_create_params)
 
         if created_user_result.is_failure():
             # El repositorio ya devuelve UserAlreadyExistsError o DatabaseError
@@ -245,7 +258,7 @@ class UserService:
 
         # 3. Calcular la fecha de expiración del token
         expires_delta = timedelta(minutes=VERIFICATION_TOKEN_EXPIRE_MINUTES)
-        expires_at_dt = datetime.utcnow() + expires_delta
+        expires_at_dt = datetime.now(datetime.UTC) + expires_delta
 
         # 4. Preparar los datos para el repositorio
         repo_token_data = VerificationTokenCreateInternal(
@@ -302,7 +315,7 @@ class UserService:
                 )
             )
 
-        if datetime.utcnow() > token_in_db.expires_at:
+        if datetime.now(datetime.UTC) > token_in_db.expires_at:
             return Failure(
                 TokenInvalidError(token_value=token_value, reason="Token ha expirado.")
             )
@@ -427,9 +440,9 @@ async def delete_user(
 # Funciones de servicio a nivel de módulo (pueden usar UserService internamente o directamente el repositorio)
 
 
-async def get_user_by_email(
+async def get_user_by_email( # Renamed UserModel to avoid clash with User schema if imported
     db: AsyncSession, email: EmailStr
-) -> Result["User", UserNotFoundError | DatabaseError]:
+) -> Result[UserModel, UserNotFoundError | DatabaseError]:
     """
     Obtiene un usuario (modelo SQLAlchemy) por su correo electrónico.
 
@@ -453,25 +466,25 @@ async def get_user_by_email(
     # We have UserInDB, but need User (SQLAlchemy model) for auth.service
     user_in_db = user_in_db_result.unwrap()
 
-    # Now, fetch the SQLAlchemy User model using the ID from UserInDB.
-    # This assumes UserInDB has an 'id' field that corresponds to User.id.
+    # Now, fetch the SQLAlchemy UserModel using the ID from UserInDB.
+    # This assumes UserInDB has an 'id' field that corresponds to UserModel.id.
     try:
         # db.get is efficient for Primary Key lookups.
-        user_model = await db.get(User, user_in_db.id)
-        if user_model is None:
+        user_model_instance = await db.get(UserModel, user_in_db.id) # Use UserModel alias
+        if user_model_instance is None:
             # This case should ideally not happen if UserInDB was found and IDs are consistent.
             logger.error(
-                f"User ID {user_in_db.id} found via UserInDB but not as User model during re-fetch."
+                f"User ID {user_in_db.id} found via UserInDB but not as UserModel during re-fetch."
             )
             return Failure(
                 UserNotFoundError(
                     email=email, detail="User data consistency error after retrieval."
                 )
             )
-        return Success(user_model)
+        return Success(user_model_instance)
     except SQLAlchemyError as e:
         logger.error(
-            f"Database error when re-fetching User model for email {email} using ID {user_in_db.id}: {e!s}",
+            f"Database error when re-fetching UserModel for email {email} using ID {user_in_db.id}: {e!s}",
             exc_info=True,
         )
         return Failure(

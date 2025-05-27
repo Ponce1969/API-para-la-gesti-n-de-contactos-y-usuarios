@@ -52,6 +52,11 @@ class ResetPasswordSchema(BaseModel):
     )
 
 
+class Msg(BaseModel):
+    """Esquema para mensajes de respuesta simples."""
+    message: str = Field(..., description="Mensaje descriptivo.")
+
+
 # Podríamos necesitar un schema para el login si no usamos OAuth2PasswordRequestForm directamente
 # class UserLogin(BaseModel):
 #     username: EmailStr # o str si se permite login con username

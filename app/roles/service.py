@@ -10,19 +10,22 @@ from typing import List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload # For eager loading relationships
 
 from app.common.errors import DatabaseError, ResourceNotFoundError
+from app.common.result import Result, Success, Failure # Import Result types
+from . import errors as role_errors # Import custom errors
 from .models import Permission, Role #, role_permissions (tabla de asociación)
 from .schemas import (
-    PermissionResponse, # Usado si el servicio construye directamente el response
+    # PermissionResponse, # Responses are usually built in handlers/API layer
     RoleCreate,
-    RoleResponse, # Usado si el servicio construye directamente el response
+    # RoleResponse,
     RoleUpdate,
-    RolePermissionCreate, # Este schema es para input a la API
-    RolePermissionResponse # Usado si el servicio construye directamente el response
+    # RolePermissionCreate,
+    # RolePermissionResponse
 )
 
-async def create_role(db: AsyncSession, role_data: RoleCreate) -> Role:
+async def create_role(db: AsyncSession, role_data: RoleCreate) -> Result[Role, role_errors.RoleAlreadyExistsError | DatabaseError]:
     """
     Crea un nuevo rol en la base de datos.
 
@@ -39,17 +42,24 @@ async def create_role(db: AsyncSession, role_data: RoleCreate) -> Role:
     db_role = Role(name=role_data.name, description=role_data.description)
     db.add(db_role)
     try:
+        # Check if role with the same name already exists
+        existing_role_query = select(Role).where(Role.name == role_data.name)
+        existing_role_result = await db.execute(existing_role_query)
+        if existing_role_result.scalar_one_or_none() is not None:
+            return Failure(role_errors.RoleAlreadyExistsError(role_name=role_data.name))
+
         await db.commit()
         await db.refresh(db_role)
-        return db_role
-    except IntegrityError as e: # Captura específica para violación de unicidad u otras restricciones
-        await db.rollback() # Es importante revertir la sesión en caso de error
-        # La capa API puede capturar esto como DatabaseError o podríamos definir excepciones personalizadas.
-        # Por ahora, la relanzamos para que la API la maneje.
-        # Considerar: raise RoleAlreadyExistsError(f"Role '{role_data.name}' already exists.") from e
-        raise
+        return Success(db_role)
+    except IntegrityError: # Should be caught by the name check above, but as a safeguard
+        await db.rollback()
+        return Failure(role_errors.RoleAlreadyExistsError(role_name=role_data.name))
+    except Exception as e:
+        await db.rollback()
+        return Failure(DatabaseError(detail=f"Error al crear rol: {e!s}"))
 
-async def get_roles(db: AsyncSession, skip: int = 0, limit: int = 100) -> List['Role']:
+
+async def get_roles(db: AsyncSession, skip: int = 0, limit: int = 100) -> Result[List[Role], DatabaseError]:
     """
     Obtiene una lista de roles de la base de datos con paginación.
 
@@ -61,11 +71,14 @@ async def get_roles(db: AsyncSession, skip: int = 0, limit: int = 100) -> List['
     Returns:
         Una lista de objetos Role.
     """
-    query = select(Role).offset(skip).limit(limit).order_by(Role.id)
-    result = await db.execute(query)
-    return list(result.scalars().all())
+    try:
+        query = select(Role).offset(skip).limit(limit).order_by(Role.id)
+        result = await db.execute(query)
+        return Success(list(result.scalars().all()))
+    except Exception as e:
+        return Failure(DatabaseError(detail=f"Error al obtener roles: {e!s}"))
 
-async def get_role_by_id(db: AsyncSession, role_id: int) -> Optional['Role']:
+async def get_role_by_id(db: AsyncSession, role_id: int) -> Result[Role, role_errors.RoleNotFoundError | DatabaseError]:
     """
     Obtiene un rol por su ID de la base de datos.
 
@@ -76,11 +89,17 @@ async def get_role_by_id(db: AsyncSession, role_id: int) -> Optional['Role']:
     Returns:
         El objeto Role si se encuentra, de lo contrario None.
     """
-    query = select(Role).where(Role.id == role_id)
-    result = await db.execute(query)
-    return result.scalar_one_or_none()
+    try:
+        query = select(Role).where(Role.id == role_id)
+        result = await db.execute(query)
+        role = result.scalar_one_or_none()
+        if role is None:
+            return Failure(role_errors.RoleNotFoundError(role_id=role_id))
+        return Success(role)
+    except Exception as e:
+        return Failure(DatabaseError(detail=f"Error al obtener rol por ID: {e!s}"))
 
-async def update_role(db: AsyncSession, role_id: int, role_data: RoleUpdate) -> Optional['Role']:
+async def update_role(db: AsyncSession, role_id: int, role_data: RoleUpdate) -> Result[Role, role_errors.RoleNotFoundError | role_errors.RoleAlreadyExistsError | DatabaseError]:
     """
     Actualiza un rol existente en la base de datos.
 
@@ -95,28 +114,37 @@ async def update_role(db: AsyncSession, role_id: int, role_data: RoleUpdate) -> 
     Raises:
         IntegrityError: Si la actualización viola restricciones de la base de datos (ej. nombre duplicado).
     """
-    db_role = await get_role_by_id(db, role_id)
-    if not db_role:
-        return None
+    role_result = await get_role_by_id(db, role_id)
+    if role_result.is_failure():
+        return role_result # RoleNotFoundError or DatabaseError
 
-    # Actualizar los campos. Pydantic model_dump(exclude_unset=True) es útil aquí
-    # para solo actualizar los campos que se proporcionan en la solicitud.
+    db_role = role_result.unwrap()
+
     update_data = role_data.model_dump(exclude_unset=True)
+
+    if "name" in update_data and update_data["name"] != db_role.name:
+        # Check if new name already exists
+        existing_role_query = select(Role).where(Role.name == update_data["name"], Role.id != role_id)
+        existing_role_exec = await db.execute(existing_role_query)
+        if existing_role_exec.scalar_one_or_none() is not None:
+            return Failure(role_errors.RoleAlreadyExistsError(role_name=update_data["name"]))
+
     for key, value in update_data.items():
         setattr(db_role, key, value)
     
-    db.add(db_role) # SQLAlchemy rastrea cambios, pero add() es explícito.
     try:
         await db.commit()
         await db.refresh(db_role)
-        return db_role
-    except IntegrityError as e:
+        return Success(db_role)
+    except IntegrityError: # Should be caught by name check, but as safeguard
         await db.rollback()
-        # Considerar: raise RoleNameConflictError o similar si es un error de unicidad de nombre.
-        raise e
+        return Failure(role_errors.RoleAlreadyExistsError(role_name=str(update_data.get("name", ""))))
+    except Exception as e:
+        await db.rollback()
+        return Failure(DatabaseError(detail=f"Error al actualizar rol: {e!s}"))
 
 
-async def delete_role(db: AsyncSession, role_id: int) -> Optional['Role']:
+async def delete_role(db: AsyncSession, role_id: int) -> Result[Role, role_errors.RoleNotFoundError | DatabaseError | role_errors.RoleDeleteError]:
     """
     Elimina un rol de la base de datos.
 
@@ -127,22 +155,26 @@ async def delete_role(db: AsyncSession, role_id: int) -> Optional['Role']:
     Returns:
         El objeto Role eliminado si se encuentra y elimina, de lo contrario None.
     """
-    db_role = await get_role_by_id(db, role_id)
-    if not db_role:
-        return None
+    role_result = await get_role_by_id(db, role_id)
+    if role_result.is_failure():
+        return role_result # RoleNotFoundError or DatabaseError
     
-    await db.delete(db_role)
+    db_role = role_result.unwrap()
+    
+    # Additional business logic for deletion can be added here (e.g., check if role is in use)
+    # For now, directly deleting.
     try:
+        await db.delete(db_role)
         await db.commit()
-        # No se puede hacer refresh a un objeto eliminado, pero devolvemos el objeto tal como estaba antes de eliminarlo.
-        # La API no espera contenido de vuelta (204 No Content), pero el servicio puede devolverlo para confirmación.
-        return db_role 
-    except IntegrityError as e: # Por si hay restricciones de FK que impiden la eliminación
+        return Success(db_role) # Return the deleted role object for confirmation
+    except IntegrityError: # For FK constraints if role is in use
         await db.rollback()
-        # Considerar: raise RoleInUseError(f"Role '{db_role.name}' cannot be deleted as it is in use.") from e
-        raise e
+        return Failure(role_errors.RoleDeleteError(role_id=role_id, message="No se puede eliminar el rol porque está en uso."))
+    except Exception as e:
+        await db.rollback()
+        return Failure(DatabaseError(detail=f"Error al eliminar rol: {e!s}"))
 
-async def get_permissions(db: AsyncSession) -> List['Permission']:
+async def get_permissions(db: AsyncSession) -> Result[List[Permission], DatabaseError]:
     """
     Obtiene una lista de todos los permisos de la base de datos.
 
@@ -152,11 +184,14 @@ async def get_permissions(db: AsyncSession) -> List['Permission']:
     Returns:
         Una lista de objetos Permission.
     """
-    query = select(Permission).order_by(Permission.id)
-    result = await db.execute(query)
-    return list(result.scalars().all())
+    try:
+        query = select(Permission).order_by(Permission.id)
+        result = await db.execute(query)
+        return Success(list(result.scalars().all()))
+    except Exception as e:
+        return Failure(DatabaseError(detail=f"Error al obtener permisos: {e!s}"))
 
-async def add_permission_to_role(db: AsyncSession, role_id: int, permission_id: int) -> Optional['Role']:
+async def add_permission_to_role(db: AsyncSession, role_id: int, permission_id: int) -> Result[Role, role_errors.RoleNotFoundError | role_errors.PermissionNotFoundError | DatabaseError | role_errors.PermissionAssignmentError]:
     """
     Asigna un permiso a un rol existente.
 
@@ -166,35 +201,34 @@ async def add_permission_to_role(db: AsyncSession, role_id: int, permission_id: 
         permission_id: ID del permiso a asignar.
 
     Returns:
-        El objeto Role actualizado con el permiso asignado, o None si el rol o permiso no existen.
+        El objeto Role actualizado con el permiso asignado, o un error.
     """
-    db_role = await db.get(models.Role, role_id, options=[selectinload(models.Role.permissions)])
-    if not db_role:
-        # Considerar: raise RoleNotFoundError(f"Role with id {role_id} not found")
-        return None
+    role_result = await get_role_by_id(db, role_id) # Uses Result now
+    if role_result.is_failure():
+        return Failure(role_errors.RoleNotFoundError(role_id=role_id))
+    db_role = role_result.unwrap()
 
-    db_permission = await db.get(models.Permission, permission_id)
+    # PermissionRepository would be better here if it exists and returns Result
+    db_permission = await db.get(Permission, permission_id)
     if not db_permission:
-        # Considerar: raise PermissionNotFoundError(f"Permission with id {permission_id} not found")
-        return None
+        return Failure(role_errors.PermissionNotFoundError(permission_id=permission_id))
 
-    # Verificar si el permiso ya está asignado al rol para idempotencia
     if db_permission not in db_role.permissions:
         db_role.permissions.append(db_permission)
-        db.add(db_role)
         try:
             await db.commit()
-            await db.refresh(db_role, attribute_names=['permissions']) # Asegurar que la relación se refresca
-        except IntegrityError as e: # Podría ocurrir si hay constraints inesperados
+            await db.refresh(db_role, attribute_names=['permissions'])
+            return Success(db_role)
+        except IntegrityError:
             await db.rollback()
-            # Considerar: raise PermissionAssignmentError(
-            #    f"Could not assign permission {permission_id} to role {role_id}: {e}"
-            # )
-            raise e
-    
-    return db_role
+            return Failure(role_errors.PermissionAssignmentError(f"No se pudo asignar el permiso {permission_id} al rol {role_id}"))
+        except Exception as e:
+            await db.rollback()
+            return Failure(DatabaseError(detail=f"Error de base de datos al asignar permiso: {e!s}"))
+    return Success(db_role) # Permiso ya asignado, considerado éxito
 
-async def remove_permission_from_role(db: AsyncSession, role_id: int, permission_id: int) -> Optional['Role']:
+
+async def remove_permission_from_role(db: AsyncSession, role_id: int, permission_id: int) -> Result[Role, role_errors.RoleNotFoundError | role_errors.PermissionNotFoundError | DatabaseError | role_errors.PermissionAssignmentError]:
     """
     Elimina un permiso de un rol existente.
 
@@ -204,38 +238,35 @@ async def remove_permission_from_role(db: AsyncSession, role_id: int, permission
         permission_id: ID del permiso a eliminar.
 
     Returns:
-        El objeto Role actualizado sin el permiso, o None si el rol o permiso no existen o no estaban asociados.
+        El objeto Role actualizado sin el permiso, o un error.
     """
-    db_role = await db.get(models.Role, role_id, options=[selectinload(models.Role.permissions)])
-    if not db_role:
-        # Considerar: raise RoleNotFoundError(f"Role with id {role_id} not found")
-        return None
+    role_result = await get_role_by_id(db, role_id) # Uses Result now
+    if role_result.is_failure():
+        return Failure(role_errors.RoleNotFoundError(role_id=role_id))
+    db_role = role_result.unwrap()
 
-    db_permission = await db.get(models.Permission, permission_id)
+    db_permission = await db.get(Permission, permission_id) # Similar to above, could use a repo method
     if not db_permission:
-        # Considerar: raise PermissionNotFoundError(f"Permission with id {permission_id} not found")
-        return None
+        return Failure(role_errors.PermissionNotFoundError(permission_id=permission_id))
 
-    # Verificar si el permiso está realmente asignado al rol
     if db_permission in db_role.permissions:
         db_role.permissions.remove(db_permission)
-        db.add(db_role)
         try:
             await db.commit()
-            await db.refresh(db_role, attribute_names=['permissions']) # Asegurar que la relación se refresca
-        except IntegrityError as e: # Menos probable aquí, pero por consistencia
+            await db.refresh(db_role, attribute_names=['permissions'])
+            return Success(db_role)
+        except IntegrityError: # Should not typically happen on remove if FKs are set up
             await db.rollback()
-            # Considerar: raise PermissionRemovalError(
-            #    f"Could not remove permission {permission_id} from role {role_id}: {e}"
-            # )
-            raise e
-        return db_role # Devuelve el rol actualizado
-    else:
-        # El permiso no estaba asignado, se considera la operación exitosa (idempotencia) o se puede devolver None/error
-        # Devolver el rol tal cual para indicar que el estado deseado (permiso no presente) se cumple.
-        return db_role
+            return Failure(role_errors.PermissionAssignmentError(f"No se pudo remover el permiso {permission_id} del rol {role_id}"))
+        except Exception as e:
+            await db.rollback()
+            return Failure(DatabaseError(detail=f"Error de base de datos al remover permiso: {e!s}"))
+    
+    # Permiso no estaba asignado, se considera éxito o un error específico "PermissionNotAssignedError"
+    return Success(db_role)
 
-async def get_role_permissions(db: AsyncSession, role_id: int) -> List['Permission']:
+
+async def get_role_permissions(db: AsyncSession, role_id: int) -> Result[List[Permission], role_errors.RoleNotFoundError | DatabaseError]:
     """
     Obtiene los permisos asignados a un rol específico.
 
@@ -244,14 +275,31 @@ async def get_role_permissions(db: AsyncSession, role_id: int) -> List['Permissi
         role_id: ID del rol.
 
     Returns:
-        Una lista de objetos Permission asignados al rol. Devuelve una lista vacía si el rol no existe.
+        Una lista de objetos Permission asignados al rol, o un error.
     """
-    # La API en get_role_permissions ya verifica si el rol existe primero.
-    # Si llegamos aquí, el rol debería existir. No obstante, por seguridad:
-    db_role = await db.get(models.Role, role_id, options=[selectinload(models.Role.permissions)])
-    if not db_role:
-        # Esto no debería ocurrir si la API valida la existencia del rol primero.
-        # Considerar: raise RoleNotFoundError(f"Role with id {role_id} not found during permission retrieval")
-        return [] # Devuelve lista vacía si el rol no se encuentra
+    role_result = await get_role_by_id(db, role_id) # Uses Result now
+    if role_result.is_failure():
+        return Failure(role_errors.RoleNotFoundError(role_id=role_id))
     
-    return list(db_role.permissions) # Devuelve la lista de permisos del rol[]
+    db_role = role_result.unwrap()
+    # Eager load permissions if not already loaded by get_role_by_id
+    # (assuming get_role_by_id does not eager load permissions by default)
+    # If get_role_by_id already loads them via options=[selectinload(Role.permissions)], then this is fine.
+    # Otherwise, a separate query or refreshing with attribute_names=['permissions'] might be needed.
+    # For simplicity, assuming 'db_role.permissions' is accessible and loaded.
+    try:
+        # Make sure permissions are loaded. If Role.permissions is a lazy load by default,
+        # accessing it here might trigger a synchronous load if not handled carefully in async.
+        # The `selectinload` option in `get_role_by_id` (if added there) or here is crucial.
+        # If `get_role_by_id` does not load permissions:
+        # refreshed_role = await db.refresh(db_role, attribute_names=['permissions']) # This is one way
+        # return Success(list(refreshed_role.permissions))
+        # Or query directly:
+        # query = select(Permission).join(Role.permissions).where(Role.id == role_id)
+        # permissions_result = await db.execute(query)
+        # return Success(list(permissions_result.scalars().all()))
+        
+        # Assuming Role.permissions is already loaded (e.g. via selectinload in get_by_id or relationships)
+        return Success(list(db_role.permissions))
+    except Exception as e:
+        return Failure(DatabaseError(detail=f"Error al obtener permisos del rol: {e!s}"))

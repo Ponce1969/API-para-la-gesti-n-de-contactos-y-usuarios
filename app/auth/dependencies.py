@@ -5,6 +5,7 @@ Este módulo proporciona dependencias de FastAPI para manejar la autenticación
 y autorización en los endpoints de la API.
 """
 
+import logging # Import logging
 from typing import Optional, TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, status
@@ -13,10 +14,10 @@ from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import service as auth_service
+# from app.auth import service as auth_service # Not used directly in this file
 from app.auth.errors import CREDENTIALS_EXCEPTION, INACTIVE_USER_EXCEPTION
 if TYPE_CHECKING:
-    from app.users.models import User  # Correct: User model is in the users slice
+    from app.users.models import User as UserModel # Use alias
 from app.auth.schemas import TokenData
 from app.common.database import get_db
 from app.users import service as user_service
@@ -28,12 +29,13 @@ oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False
 )
 
+logger = logging.getLogger(__name__) # Initialize logger
 
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
-) -> 'User':
+) -> UserModel: # Use UserModel alias
     """
     Obtiene el usuario actual a partir del token JWT.
 
@@ -82,13 +84,13 @@ async def get_current_user(
         # Distinguish between UserNotFoundError and other DB errors if needed for logging
         raise CREDENTIALS_EXCEPTION
     
-    user: 'User' = user_result.unwrap()
+    user: UserModel = user_result.unwrap() # Use UserModel alias
     return user
 
 
 async def get_current_active_user(
-    current_user: 'User' = Depends(get_current_user),
-) -> 'User':
+    current_user: UserModel = Depends(get_current_user), # Use UserModel alias
+) -> UserModel: # Use UserModel alias
     """
     Obtiene el usuario actual si está activo.
 
@@ -107,8 +109,8 @@ async def get_current_active_user(
 
 
 async def get_current_active_superuser(
-    current_user: 'User' = Depends(get_current_user),
-) -> 'User':
+    current_user: UserModel = Depends(get_current_user), # Use UserModel alias
+) -> UserModel: # Use UserModel alias
     """
     Obtiene el usuario actual si es superusuario.
 
@@ -130,9 +132,9 @@ async def get_current_active_superuser(
 
 
 async def get_optional_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str = Depends(oauth2_scheme), # token can be None if auto_error=False
     db: AsyncSession = Depends(get_db),
-) -> Optional['User']:
+) -> Optional[UserModel]: # Use UserModel alias
     """
     Obtiene el usuario actual si está autenticado, de lo contrario devuelve None.
 

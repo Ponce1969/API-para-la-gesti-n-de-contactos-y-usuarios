@@ -24,13 +24,13 @@ user_roles = Table(
     ),
     Column(
         "assigned_at",
-        DateTime,
+        DateTime(timezone=True), # Ensure timezone aware
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     ),
-    Column("assigned_by", Integer, nullable=True),
+    Column("assigned_by", Integer, nullable=True), # Should this be ForeignKey?
     Column("is_active", Boolean, default=True, nullable=False),
-    Column("expires_at", DateTime, nullable=True),
+    Column("expires_at", DateTime(timezone=True), nullable=True), # Ensure timezone aware
     comment="Tabla de asociación entre usuarios y roles con metadatos adicionales",
 )
 
@@ -79,10 +79,10 @@ class Role(Base):
 
     # Auditoría
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
@@ -124,10 +124,10 @@ class Permission(Base):
 
     # Auditoría
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
@@ -152,10 +152,10 @@ role_permissions = Table(
     ),
     Column(
         "assigned_at",
-        DateTime,
+        DateTime(timezone=True), # Ensure timezone aware
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     ),
-    Column("assigned_by", Integer, nullable=True),
+    Column("assigned_by", Integer, nullable=True), # Should this be ForeignKey?
     comment="Tabla de asociación entre roles y permisos",
 )

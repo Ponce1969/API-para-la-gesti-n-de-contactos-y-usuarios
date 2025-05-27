@@ -5,7 +5,7 @@ Este módulo define los endpoints de la API para la gestión de usuarios,
 incluida la creación, actualización, eliminación y obtención de usuarios.
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, BackgroundTasks
 from sqlalchemy.exc import IntegrityError
@@ -57,34 +57,37 @@ async def get_users(
             error = result.failure()
             raise handle_error(error)
         
-        users = result.unwrap()
-        total = len(users)  # En una implementación real debería ser una consulta COUNT
+        users_in_db = result.unwrap()
+        total = len(users_in_db)  # En una implementación real debería ser una consulta COUNT
         
         # Convertir los objetos User a diccionarios para la respuesta
-        user_data = []
-        for user in users:
-            user_dict = {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.first_name + " " + user.last_name if user.first_name and user.last_name else None,
-                "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
-                "is_verified": user.is_verified,
-                "created_at": user.created_at,
-                "updated_at": user.updated_at
+        user_data: list[dict[str, Any]] = []
+        for user_model in users_in_db:
+            user_dict: dict[str, Any] = {
+                "id": user_model.id,
+                "email": user_model.email,
+                "full_name": user_model.first_name + " " + user_model.last_name if user_model.first_name and user_model.last_name else None,
+                "is_active": user_model.is_active,
+                "is_superuser": user_model.is_superuser,
+                "is_verified": user_model.is_verified,
+                "created_at": user_model.created_at,
+                "updated_at": user_model.updated_at
             }
             user_data.append(user_dict)
         
+        # Ensure pagination is a dict[str, Any]
+        pagination_data: dict[str, Any] = {
+            "total": total,
+            "page": skip // limit + 1,
+            "size": limit,
+            "pages": (total + limit - 1) // limit  # Redondeo hacia arriba
+        }
+
         return UserListResponse(
             success=True,
             message="Usuarios obtenidos exitosamente",
             data=user_data,
-            pagination={
-                "total": total,
-                "page": skip // limit + 1,
-                "size": limit,
-                "pages": (total + limit - 1) // limit  # Redondeo hacia arriba
-            }
+            pagination=pagination_data
         )
     except Exception as e:
         raise HTTPException(
@@ -124,24 +127,24 @@ async def get_user(
                 )
             raise handle_error(error)
         
-        user = result.unwrap()
+        user_model = result.unwrap()
         
         # Convertir el objeto User a diccionario para la respuesta
-        user_data = {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.first_name + " " + user.last_name if user.first_name and user.last_name else None,
-            "is_active": user.is_active,
-            "is_superuser": user.is_superuser,
-            "is_verified": user.is_verified,
-            "created_at": user.created_at,
-            "updated_at": user.updated_at
+        user_data_dict: dict[str, Any] = {
+            "id": user_model.id,
+            "email": user_model.email,
+            "full_name": user_model.first_name + " " + user_model.last_name if user_model.first_name and user_model.last_name else None,
+            "is_active": user_model.is_active,
+            "is_superuser": user_model.is_superuser,
+            "is_verified": user_model.is_verified,
+            "created_at": user_model.created_at,
+            "updated_at": user_model.updated_at
         }
         
         return UserResponse(
             success=True,
             message="Usuario obtenido exitosamente",
-            data=user_data
+            data=user_data_dict
         )
     except HTTPException:
         raise
@@ -177,24 +180,25 @@ async def create_user(
     try:
         # Adaptar UserCreate a la estructura esperada por la aplicación
         # La aplicación espera first_name y last_name separados, pero UserCreate tiene full_name
-        first_name = None
-        last_name = None
-        if user_data.full_name:
-            name_parts = user_data.full_name.split(" ", 1)
-            first_name = name_parts[0]
-            last_name = name_parts[1] if len(name_parts) > 1 else ""
+        # first_name: Optional[str] = None
+        # last_name: Optional[str] = None
+        # if user_data.full_name:
+        #     name_parts = user_data.full_name.split(" ", 1)
+        #     first_name = name_parts[0]
+        #     last_name = name_parts[1] if len(name_parts) > 1 else ""
         
         # Crear el usuario
-        user_to_create = UserCreate(
-            email=user_data.email,
-            password=user_data.password,
-            is_active=user_data.is_active,
-            is_superuser=user_data.is_superuser,
-            is_verified=user_data.is_verified,
-            full_name=user_data.full_name  # Mantener full_name para la validación de Pydantic
-        )
+        # user_to_create = UserCreate(
+        #     email=user_data.email,
+        #     password=user_data.password,
+        #     is_active=user_data.is_active,
+        #     is_superuser=user_data.is_superuser,
+        #     is_verified=user_data.is_verified,
+        #     full_name=user_data.full_name
+        # )
+        # The user_data already is of type UserCreate, direct pass to service
         
-        result = await user_service.create_user(db, user_to_create)
+        result = await user_service.create_user(db, user_data) # Pass user_data directly
         if result.is_failure():
             error = result.failure()
             if isinstance(error, UserAlreadyExistsError):
@@ -204,30 +208,30 @@ async def create_user(
                 )
             raise handle_error(error)
         
-        user = result.unwrap()
+        created_user_model = result.unwrap()
         
         # Si el usuario no está verificado, enviar email de verificación
-        if not user.is_verified:
+        if not created_user_model.is_verified:
             # Aquí podríamos agregar la tarea en segundo plano para enviar el email
-            # background_tasks.add_task(send_verification_email, db, user.email)
+            # background_tasks.add_task(send_verification_email, db, created_user_model.email)
             pass
         
         # Convertir el objeto User a diccionario para la respuesta
-        user_data = {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.first_name + " " + user.last_name if user.first_name and user.last_name else None,
-            "is_active": user.is_active,
-            "is_superuser": user.is_superuser,
-            "is_verified": user.is_verified,
-            "created_at": user.created_at,
-            "updated_at": user.updated_at
+        user_data_dict: dict[str, Any] = {
+            "id": created_user_model.id,
+            "email": created_user_model.email,
+            "full_name": created_user_model.first_name + " " + created_user_model.last_name if created_user_model.first_name and created_user_model.last_name else None,
+            "is_active": created_user_model.is_active,
+            "is_superuser": created_user_model.is_superuser,
+            "is_verified": created_user_model.is_verified,
+            "created_at": created_user_model.created_at,
+            "updated_at": created_user_model.updated_at
         }
         
         return UserResponse(
             success=True,
             message="Usuario creado exitosamente",
-            data=user_data
+            data=user_data_dict
         )
     except HTTPException:
         raise
@@ -273,25 +277,25 @@ async def update_user(
         HTTPException: Si el usuario no existe, el email ya está en uso, o hay un error al actualizarlo.
     """
     try:
-        # Adaptar UserUpdate a la estructura esperada por la aplicación
-        # La aplicación espera first_name y last_name separados, pero UserUpdate tiene full_name
-        first_name = None
-        last_name = None
-        if user_data.full_name is not None:
-            name_parts = user_data.full_name.split(" ", 1)
-            first_name = name_parts[0]
-            last_name = name_parts[1] if len(name_parts) > 1 else ""
+        # Adaptar UserUpdate a la estructura esperada por la aplicación (si es necesario)
+        # En este caso, UserUpdate ya tiene la estructura correcta para el servicio
+        # first_name: Optional[str] = None
+        # last_name: Optional[str] = None
+        # if user_data.full_name is not None:
+        #     name_parts = user_data.full_name.split(" ", 1)
+        #     first_name = name_parts[0]
+        #     last_name = name_parts[1] if len(name_parts) > 1 else ""
         
-        # Preparar UserUpdate para el servicio
-        update_data = UserUpdate(
-            email=user_data.email,
-            password=user_data.password,
-            is_active=user_data.is_active,
-            is_verified=user_data.is_verified,
-            full_name=user_data.full_name  # Mantener full_name para la validación de Pydantic
-        )
+        # Preparar UserUpdate para el servicio - user_data ya es del tipo correcto
+        # update_payload = UserUpdate(
+        #     email=user_data.email,
+        #     password=user_data.password,
+        #     is_active=user_data.is_active,
+        #     is_verified=user_data.is_verified,
+        #     full_name=user_data.full_name
+        # )
         
-        result = await user_service.update_user(db, user_id, update_data)
+        result = await user_service.update_user(db, user_id, user_data) # Pass user_data directly
         if result.is_failure():
             error = result.failure()
             if isinstance(error, UserNotFoundError):
@@ -306,24 +310,24 @@ async def update_user(
                 )
             raise handle_error(error)
         
-        user = result.unwrap()
+        updated_user_model = result.unwrap()
         
         # Convertir el objeto User a diccionario para la respuesta
-        user_data = {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.first_name + " " + user.last_name if user.first_name and user.last_name else None,
-            "is_active": user.is_active,
-            "is_superuser": user.is_superuser,
-            "is_verified": user.is_verified,
-            "created_at": user.created_at,
-            "updated_at": user.updated_at
+        user_data_dict: dict[str, Any] = {
+            "id": updated_user_model.id,
+            "email": updated_user_model.email,
+            "full_name": updated_user_model.first_name + " " + updated_user_model.last_name if updated_user_model.first_name and updated_user_model.last_name else None,
+            "is_active": updated_user_model.is_active,
+            "is_superuser": updated_user_model.is_superuser,
+            "is_verified": updated_user_model.is_verified,
+            "created_at": updated_user_model.created_at,
+            "updated_at": updated_user_model.updated_at
         }
         
         return UserResponse(
             success=True,
             message="Usuario actualizado exitosamente",
-            data=user_data
+            data=user_data_dict
         )
     except HTTPException:
         raise
@@ -407,7 +411,7 @@ async def read_user_me(
     """
     try:
         # Convertir el objeto User a diccionario para la respuesta
-        user_data = {
+        user_data_dict: dict[str, Any] = {
             "id": current_user.id,
             "email": current_user.email,
             "full_name": current_user.first_name + " " + current_user.last_name if current_user.first_name and current_user.last_name else None,
@@ -421,7 +425,7 @@ async def read_user_me(
         return UserResponse(
             success=True,
             message="Datos del usuario autenticado obtenidos exitosamente",
-            data=user_data
+            data=user_data_dict
         )
     except Exception as e:
         raise HTTPException(

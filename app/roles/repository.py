@@ -5,7 +5,7 @@ Este módulo proporciona acceso a la base de datos para el dominio de roles,
 implementando operaciones CRUD básicas y consultas especializadas.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone # Import timezone
 from typing import List, Optional, Tuple, Dict, Any
 
 from returns.result import Result, Success, Failure
@@ -149,8 +149,8 @@ class RoleRepository:
                 description=description,
                 is_system=is_system,
                 is_active=True,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
 
             db.add(new_role)
@@ -215,7 +215,7 @@ class RoleRepository:
             if is_active is not None:
                 role.is_active = is_active
 
-            role.updated_at = datetime.utcnow()
+            role.updated_at = datetime.now(timezone.utc)
             await db.flush()
 
             return Success(role)
@@ -321,11 +321,11 @@ class RoleRepository:
                 })
 
             # Asignar el permiso al rol
-            now = datetime.utcnow()
+            now_utc_val = datetime.now(timezone.utc)
             values = {
                 "role_id": role_id,
                 "permission_id": permission_id,
-                "assigned_at": now,
+                "assigned_at": now_utc_val,
                 "assigned_by": assigned_by
             }
 
@@ -336,7 +336,7 @@ class RoleRepository:
             return Success({
                 "role_id": role_id,
                 "permission_id": permission_id,
-                "assigned_at": now,
+                "assigned_at": now_utc_val,
                 "assigned_by": assigned_by,
                 "already_assigned": False
             })
@@ -531,8 +531,8 @@ class PermissionRepository:
                 name=name,
                 code=code,
                 description=description,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
 
             db.add(new_permission)
@@ -598,7 +598,7 @@ class PermissionRepository:
             if description is not None:
                 permission.description = description
 
-            permission.updated_at = datetime.utcnow()
+            permission.updated_at = datetime.now(timezone.utc)
             await db.flush()
 
             return Success(permission)

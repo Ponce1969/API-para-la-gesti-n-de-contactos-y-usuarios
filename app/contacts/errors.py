@@ -36,7 +36,12 @@ class ContactNotFoundError(ContactError):
 
     def __init__(self, contact_id: int, message: Optional[str] = None):
         self.contact_id = contact_id
-        super().__init__(message or f"No se encontró un contacto con ID {contact_id}")
+        from app.common.errors import ErrorCode, status # Import status
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            message=message or f"No se encontró un contacto con ID {contact_id}"
+        )
 
 
 class ContactAlreadyExistsError(ContactError):
@@ -44,7 +49,12 @@ class ContactAlreadyExistsError(ContactError):
 
     def __init__(self, email: str, message: Optional[str] = None):
         self.email = email
-        super().__init__(message or f"Ya existe un contacto con el email {email}")
+        from app.common.errors import ErrorCode, status # Import status
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            code=ErrorCode.DUPLICATE_ENTRY,
+            message=message or f"Ya existe un contacto con el email {email}"
+        )
 
 
 class ContactValidationError(ContactError):
@@ -52,8 +62,12 @@ class ContactValidationError(ContactError):
 
     def __init__(self, errors: Dict[str, Any], message: Optional[str] = None):
         self.errors = errors
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message or f"Error de validación en los datos del contacto: {errors}"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code=ErrorCode.VALIDATION_ERROR,
+            message=message or f"Error de validación en los datos del contacto: {errors}",
+            detail=errors
         )
 
 
@@ -69,8 +83,11 @@ class ContactGroupNotFoundError(ContactGroupError):
 
     def __init__(self, group_id: int, message: Optional[str] = None):
         self.group_id = group_id
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message or f"No se encontró un grupo de contactos con ID {group_id}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            message=message or f"No se encontró un grupo de contactos con ID {group_id}"
         )
 
 
@@ -80,8 +97,11 @@ class ContactGroupAlreadyExistsError(ContactGroupError):
     def __init__(self, name: str, owner_id: int, message: Optional[str] = None):
         self.name = name
         self.owner_id = owner_id
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message
+            status_code=status.HTTP_409_CONFLICT,
+            code=ErrorCode.DUPLICATE_ENTRY,
+            message=message
             or f"Ya existe un grupo de contactos con el nombre {name} para este usuario"
         )
 
@@ -91,9 +111,13 @@ class ContactGroupValidationError(ContactGroupError):
 
     def __init__(self, errors: Dict[str, Any], message: Optional[str] = None):
         self.errors = errors
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message
-            or f"Error de validación en los datos del grupo de contactos: {errors}"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code=ErrorCode.VALIDATION_ERROR,
+            message=message
+            or f"Error de validación en los datos del grupo de contactos: {errors}",
+            detail=errors
         )
 
 
@@ -110,8 +134,11 @@ class ContactNotInGroupError(ContactGroupRelationError):
     def __init__(self, contact_id: int, group_id: int, message: Optional[str] = None):
         self.contact_id = contact_id
         self.group_id = group_id
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message
+            status_code=status.HTTP_404_NOT_FOUND, # Or 400 Bad Request depending on context
+            code=ErrorCode.VALIDATION_ERROR, # Or a custom code
+            message=message
             or f"El contacto con ID {contact_id} no pertenece al grupo con ID {group_id}"
         )
 
@@ -122,8 +149,11 @@ class ContactAlreadyInGroupError(ContactGroupRelationError):
     def __init__(self, contact_id: int, group_id: int, message: Optional[str] = None):
         self.contact_id = contact_id
         self.group_id = group_id
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message
+            status_code=status.HTTP_409_CONFLICT,
+            code=ErrorCode.DUPLICATE_ENTRY, # Or a custom code
+            message=message
             or f"El contacto con ID {contact_id} ya pertenece al grupo con ID {group_id}"
         )
 
@@ -133,8 +163,11 @@ class UnauthorizedContactAccessError(ContactError):
 
     def __init__(self, contact_id: int, message: Optional[str] = None):
         self.contact_id = contact_id
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message
+            status_code=status.HTTP_403_FORBIDDEN,
+            code=ErrorCode.INSUFFICIENT_PERMISSIONS,
+            message=message
             or f"No está autorizado para acceder al contacto con ID {contact_id}"
         )
 
@@ -144,8 +177,11 @@ class UnauthorizedGroupAccessError(ContactGroupError):
 
     def __init__(self, group_id: int, message: Optional[str] = None):
         self.group_id = group_id
+        from app.common.errors import ErrorCode, status # Import status
         super().__init__(
-            message or f"No está autorizado para acceder al grupo con ID {group_id}"
+            status_code=status.HTTP_403_FORBIDDEN,
+            code=ErrorCode.INSUFFICIENT_PERMISSIONS,
+            message=message or f"No está autorizado para acceder al grupo con ID {group_id}"
         )
 
 

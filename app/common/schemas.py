@@ -26,13 +26,13 @@ class BaseResponse(BaseModel):
     """
 
     success: bool = Field(
-        ..., default=True, description="Indica si la operación fue exitosa"
+        default=True, description="Indica si la operación fue exitosa"
     )
-    message: str | None = Field(
-        ..., default=None, description="Mensaje descriptivo de la operación"
+    message: str = Field(
+        default="", description="Mensaje descriptivo de la operación"
     )
-    data: Any | None = Field(..., default=None, description="Datos de la respuesta")
-    error: dict | None = Field(..., default=None, description="Detalles del error")
+    data: Any = Field(default=None, description="Datos de la respuesta")
+    error: dict[str, Any] | None = Field(default=None, description="Detalles del error")
 
     class Config:
         json_schema_extra = {
@@ -98,8 +98,8 @@ class ErrorResponse(BaseResponse):
     """
 
     status_code: int = Field(default=..., description="Código de estado HTTP")
-    error: str = Field(default=..., description="Tipo de error")
-    details: dict | None = Field(
+    error_type: str = Field(default="unknown_error", description="Tipo de error") # Renamed from error to error_type
+    details: dict[str, Any] | None = Field( # Made details more specific
         default=None, description="Detalles adicionales del error"
     )
 
@@ -109,7 +109,7 @@ class ErrorResponse(BaseResponse):
                 "success": False,
                 "message": "Error en la operación",
                 "status_code": 400,
-                "error": "Bad Request",
+                "error_type": "Bad Request", # Renamed here too
                 "details": {"field": "value"},
             }
         }
@@ -139,7 +139,7 @@ class MessageResponse(BaseResponse):
         message: Mensaje descriptivo
     """
 
-    message: str = Field(default=..., description="Mensaje descriptivo")
+    message: str = Field(description="Mensaje descriptivo")
 
     class Config:
         json_schema_extra = {

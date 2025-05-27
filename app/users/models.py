@@ -4,7 +4,7 @@ Este módulo define los modelos de base de datos relacionados con los usuarios,
 utilizando SQLAlchemy ORM con soporte asíncrono.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone # Import timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -90,20 +90,20 @@ class User(Base):
 
     # Auditoría
     last_login: Mapped[datetime | None] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=True,
         comment="Fecha y hora del último inicio de sesión exitoso",
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc), # Changed to timezone.utc
         nullable=False,
         comment="Fecha y hora de creación del usuario",
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc), # Changed to timezone.utc
+        onupdate=lambda: datetime.now(timezone.utc), # Changed to timezone.utc
         nullable=False,
         comment="Fecha y hora de la última actualización del usuario",
     )
@@ -182,7 +182,7 @@ class VerificationToken(Base):
     )
 
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, comment="Fecha y hora de expiración del token"
+        DateTime(timezone=True), nullable=False, comment="Fecha y hora de expiración del token"
     )
 
     is_used: Mapped[bool] = mapped_column(
@@ -193,8 +193,8 @@ class VerificationToken(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc), # Changed to timezone.utc
         nullable=False,
         comment="Fecha y hora de creación del token",
     )

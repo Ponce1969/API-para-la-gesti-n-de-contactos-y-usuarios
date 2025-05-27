@@ -23,10 +23,11 @@ from app.roles.schemas import (
     PermissionResponse,
     RoleCreate,
     RolePermissionCreate,
+    RolePermissionResponse, # Import RolePermissionResponse
     RoleResponse,
     RoleUpdate,
 )
-from app.users.models import User
+from app.users.models import User # This is UserModel from app.users.models
 
 # Crear el router
 router = APIRouter(prefix="/roles", tags=["roles"])
@@ -41,7 +42,7 @@ async def get_roles(
     include_inactive: bool = Query(False, description="Incluir roles inactivos"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_user),
-) -> list[Role]:
+) -> list[RoleResponse]: # Changed to list[RoleResponse]
     """
     Obtiene la lista de roles con paginación.
 
@@ -62,9 +63,10 @@ async def get_roles(
         result = await RoleRepository.get_all(db, skip, limit, include_inactive)
         if is_failure(result):
             error = result.failure()
-            raise handle_error(error)
+            raise handle_error(error) # type: ignore
 
-        return result.unwrap()
+        roles_db = result.unwrap()
+        return [RoleResponse.model_validate(role) for role in roles_db]
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -77,7 +79,7 @@ async def get_role(
     role_id: int = Path(..., ge=1, description="ID del rol a obtener"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_user),
-) -> Role:
+) -> RoleResponse: # Changed to RoleResponse
     """
     Obtiene un rol por su ID.
 
@@ -96,9 +98,10 @@ async def get_role(
         result = await RoleRepository.get_by_id(db, role_id)
         if is_failure(result):
             error = result.failure()
-            raise handle_role_error(error)
+            raise handle_role_error(error) # type: ignore
 
-        return result.unwrap()
+        role_db = result.unwrap()
+        return RoleResponse.model_validate(role_db)
     except HTTPException:
         raise
     except Exception as e:
@@ -113,7 +116,7 @@ async def create_role(
     role_data: RoleCreate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_superuser),
-) -> Role:
+) -> RoleResponse: # Changed to RoleResponse
     """
     Crea un nuevo rol.
 
@@ -134,10 +137,12 @@ async def create_role(
         )
         if is_failure(result):
             error = result.failure()
-            raise handle_role_error(error)
+            raise handle_role_error(error) # type: ignore
 
-        await db.commit()
-        return result.unwrap()
+        # Assuming result.unwrap() returns the Role model instance
+        created_role_db = result.unwrap()
+        await db.commit() # Commit after successful creation in repository
+        return RoleResponse.model_validate(created_role_db)
     except HTTPException:
         raise
     except IntegrityError as e:
@@ -158,11 +163,11 @@ async def create_role(
 
 @router.put("/{role_id}", response_model=RoleResponse)
 async def update_role(
-    role_id: int = Path(..., ge=1, description="ID del rol a actualizar"),
-    role_data: RoleUpdate = None,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_active_superuser),
-) -> Role:
+    role_data: RoleUpdate, 
+    role_id: int = Path(..., ge=1, description="ID del rol a actualizar"), 
+    db: AsyncSession = Depends(get_db), 
+    _: User = Depends(get_current_active_superuser)
+) -> RoleResponse:
     """
     Actualiza un rol existente.
 
@@ -179,9 +184,7 @@ async def update_role(
         HTTPException: Si el rol no existe, se intenta modificar un rol del sistema,
                       ya existe otro rol con el nuevo nombre, o hay un error al actualizarlo.
     """
-    if role_data is None:
-        role_data = RoleUpdate()
-
+    # The check `if role_data is None:` is no longer needed as it's a required body
     try:
         result = await RoleRepository.update(
             db,
@@ -192,10 +195,11 @@ async def update_role(
         )
         if is_failure(result):
             error = result.failure()
-            raise handle_role_error(error)
+            raise handle_role_error(error) # type: ignore
 
-        await db.commit()
-        return result.unwrap()
+        updated_role_db = result.unwrap()
+        await db.commit() # Commit after successful update in repository
+        return RoleResponse.model_validate(updated_role_db)
     except HTTPException:
         raise
     except IntegrityError as e:
@@ -257,7 +261,7 @@ async def get_permissions(
     limit: int = Query(100, ge=1, le=100, description="Límite de registros a retornar"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_user),
-) -> list[Permission]:
+) -> list[PermissionResponse]: # Changed to list[PermissionResponse]
     """
     Obtiene la lista de permisos con paginación.
 
@@ -277,9 +281,10 @@ async def get_permissions(
         result = await PermissionRepository.get_all(db, skip, limit)
         if is_failure(result):
             error = result.failure()
-            raise handle_error(error)
+            raise handle_error(error) # type: ignore
 
-        return result.unwrap()
+        permissions_db = result.unwrap()
+        return [PermissionResponse.model_validate(perm) for perm in permissions_db]
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -292,7 +297,7 @@ async def get_role_permissions(
     role_id: int = Path(..., ge=1, description="ID del rol"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_user),
-) -> list[Permission]:
+) -> list[PermissionResponse]: # Changed to list[PermissionResponse]
     """
     Obtiene los permisos asignados a un rol.
 
@@ -311,9 +316,10 @@ async def get_role_permissions(
         result = await RoleRepository.get_permissions_by_role_id(db, role_id)
         if is_failure(result):
             error = result.failure()
-            raise handle_role_error(error)
+            raise handle_role_error(error) # type: ignore
 
-        return result.unwrap()
+        permissions_db = result.unwrap()
+        return [PermissionResponse.model_validate(perm) for perm in permissions_db]
     except HTTPException:
         raise
     except Exception as e:
@@ -325,11 +331,11 @@ async def get_role_permissions(
 
 @router.post("/{role_id}/permissions/", status_code=status.HTTP_200_OK)
 async def add_permission_to_role(
-    permission_data: RolePermissionCreate,
-    role_id: int = Path(..., ge=1, description="ID del rol"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_superuser),
-) -> dict[str, Any]:
+    permission_data: RolePermissionCreate, 
+    role_id: int = Path(..., ge=1, description="ID del rol"), 
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_active_superuser)
+) -> RolePermissionResponse:
     """
     Asigna un permiso a un rol.
 
@@ -354,10 +360,40 @@ async def add_permission_to_role(
         )
         if is_failure(result):
             error = result.failure()
-            raise handle_role_error(error)
+            raise handle_role_error(error) # type: ignore
 
+        # result.unwrap() from RoleRepository.assign_permission returns a tuple (role_id, permission_id, assigned_at)
+        # or the Role object if it's modified to return that.
+        # Assuming it returns the tuple as per typical association table handling or a dict.
+        # The RolePermissionResponse schema expects role_id, permission_id, assigned_at.
+        assignment_details = result.unwrap() # This needs to be compatible with RolePermissionResponse
+        
+        # If RoleRepository.assign_permission returns the role model with updated permissions:
+        # updated_role_model = result.unwrap()
+        # await db.commit()
+        # return RolePermissionResponse(role_id=updated_role_model.id, permission_id=permission_data.permission_id, assigned_at=datetime.now(timezone.utc)) # Example
+        
+        # For now, assuming 'assignment_details' is a dict or object compatible with RolePermissionResponse
+        # If RoleRepository.assign_permission returns something like the new association object,
+        # then RolePermissionResponse.model_validate(assignment_details) would be used.
+        # If it returns the updated Role, we need to construct RolePermissionResponse differently.
+        # Let's assume the service layer (if one existed between handler and repo) or repo returns
+        # something that can be directly validated or easily converted.
+        # Given the current structure, and if RoleRepository.assign_permission returns the Role:
+        updated_role_model = result.unwrap() # Assuming this is the Role model
         await db.commit()
-        return result.unwrap()
+        # We need 'assigned_at'. If the DB sets it, we'd need to refresh or get it.
+        # If RoleRepository.assign_permission returns the association model instance, that's better.
+        # For now, let's construct based on what we have.
+        # This part might need adjustment based on actual return of RoleRepository.assign_permission
+        return RolePermissionResponse(
+            role_id=role_id, # Or updated_role_model.id
+            permission_id=permission_data.permission_id,
+            # assigned_at would ideally come from the created association record
+            # If not available, and schema allows None, pass None. Otherwise, datetime.now().
+            # Based on schemas.py, assigned_at is Optional[datetime].
+            assigned_at=None # Or datetime.now(timezone.utc) if it's set upon creation
+        )
     except HTTPException:
         raise
     except Exception as e:

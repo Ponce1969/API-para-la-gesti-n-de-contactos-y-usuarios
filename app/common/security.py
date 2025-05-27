@@ -7,7 +7,7 @@ Este módulo proporciona funciones para:
 - Verificar permisos de usuario
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone # Import timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from fastapi import Depends, HTTPException
@@ -19,7 +19,11 @@ from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.errors import CREDENTIALS_EXCEPTION, INACTIVE_USER_EXCEPTION
+from app.auth.errors import (
+    CREDENTIALS_EXCEPTION,
+    INACTIVE_USER_EXCEPTION,
+    INSUFFICIENT_PRIVILEGES_EXCEPTION, # Corrected name
+)
 from app.common.config import settings
 from app.common.result import Failure, Result, Success
 
@@ -45,9 +49,9 @@ def create_access_token(
         str: Token JWT codificado
     """
     if expires_delta:
-        expire = datetime.now(datetime.timezone.utc) + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta # Changed to timezone.utc
     else:
-        expire = datetime.now(datetime.timezone.utc) + timedelta(
+        expire = datetime.now(timezone.utc) + timedelta( # Changed to timezone.utc
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 

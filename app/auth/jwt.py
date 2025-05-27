@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from returns.result import Result, Success, Failure
 import uuid
 
-from app.auth.errors import InvalidTokenError, ExpiredTokenError
+from app.auth import errors # Import the errors module
 from app.auth.schemas import TokenData
 from app.common.config import settings
 
@@ -22,7 +22,7 @@ def create_token(
     secret_key: str, 
     expires_delta: Optional[timedelta] = None,
     token_type: str = "access"
-) -> Result[str, InvalidTokenError]:
+) -> Result[str, errors.InvalidTokenError]: # Use aliased errors
     """
     Crea un token JWT genérico.
 
@@ -62,13 +62,13 @@ def create_token(
         
         return Success(encoded_jwt)
     except Exception as e:
-        return Failure(InvalidTokenError(f"Error al crear el token: {str(e)}"))
+        return Failure(errors.InvalidTokenError(f"Error al crear el token: {str(e)}"))
 
 
 def create_access_token(
     data: Dict[str, Any], 
     expires_delta: Optional[timedelta] = None
-) -> Result[str, InvalidTokenError]:
+) -> Result[str, errors.InvalidTokenError]: # Use aliased errors
     """
     Crea un token de acceso JWT.
 
@@ -94,7 +94,7 @@ def create_access_token(
 def create_refresh_token(
     data: Dict[str, Any], 
     expires_delta: Optional[timedelta] = None
-) -> Result[str, InvalidTokenError]:
+) -> Result[str, errors.InvalidTokenError]: # Use aliased errors
     """
     Crea un token de actualización JWT.
 
@@ -119,7 +119,7 @@ def create_refresh_token(
 
 def create_password_reset_token(
     data: Dict[str, Any]
-) -> Result[str, InvalidTokenError]:
+) -> Result[str, errors.InvalidTokenError]: # Use aliased errors
     """
     Crea un token específico para el restablecimiento de contraseña.
 
@@ -142,7 +142,7 @@ def create_password_reset_token(
 
 def create_email_verification_token(
     data: Dict[str, Any]
-) -> Result[str, InvalidTokenError]:
+) -> Result[str, errors.InvalidTokenError]: # Use aliased errors
     """
     Crea un token específico para la verificación de correo electrónico.
 
@@ -166,7 +166,7 @@ def create_email_verification_token(
 def verify_token(
     token: str, 
     token_type: str = "access"
-) -> Result[TokenData, InvalidTokenError]:
+) -> Result[TokenData, errors.InvalidTokenError]: # Use aliased errors
     """
     Verifica y decodifica un token JWT.
 
@@ -185,7 +185,7 @@ def verify_token(
     elif token_type == "refresh":
         secret_key = settings.JWT_REFRESH_SECRET_KEY.get_secret_value()
     else:
-        return Failure(InvalidTokenError(f"Tipo de token no válido: {token_type}"))
+        return Failure(errors.InvalidTokenError(f"Tipo de token no válido: {token_type}"))
     
     try:
         # Decodificar el token
@@ -197,29 +197,30 @@ def verify_token(
         )
         
         # Verificar que el token contenga un subject
-        if "sub" not in payload:
-            return Failure(InvalidTokenError("Token no contiene un identificador de usuario (sub)"))
+        sub_val = payload.get("sub")
+        if sub_val is None:
+            return Failure(errors.InvalidTokenError("Token no contiene un identificador de usuario (sub)"))
         
         # Verificar que el tipo de token coincida con el esperado
         token_payload_type = payload.get("type")
         if token_payload_type != token_type:
-            return Failure(InvalidTokenError(
+            return Failure(errors.InvalidTokenError(
                 f"Tipo de token incorrecto. Esperado: {token_type}, Recibido: {token_payload_type}"
             ))
         
         # Crear y devolver el objeto TokenData
-        token_data = TokenData(sub=payload.get("sub"))
+        token_data = TokenData(sub=str(sub_val)) # Ensure sub is str
         return Success(token_data)
     
     except jwt.ExpiredSignatureError:
-        return Failure(ExpiredTokenError("El token ha expirado"))
+        return Failure(errors.ExpiredTokenError("El token ha expirado"))
     except JWTError as e:
-        return Failure(InvalidTokenError(f"Token inválido: {str(e)}"))
+        return Failure(errors.InvalidTokenError(f"Token inválido: {str(e)}"))
     except Exception as e:
-        return Failure(InvalidTokenError(f"Error al verificar el token: {str(e)}"))
+        return Failure(errors.InvalidTokenError(f"Error al verificar el token: {str(e)}"))
 
 
-def verify_refresh_token(token: str) -> Result[TokenData, InvalidTokenError]:
+def verify_refresh_token(token: str) -> Result[TokenData, errors.InvalidTokenError]: # Use aliased errors
     """
     Verifica un token de actualización JWT.
 
@@ -237,7 +238,7 @@ def verify_refresh_token(token: str) -> Result[TokenData, InvalidTokenError]:
 def decode_token_payload(
     token: str, 
     verify_signature: bool = True
-) -> Result[Dict[str, Any], InvalidTokenError]:
+) -> Result[Dict[str, Any], errors.InvalidTokenError]: # Use aliased errors
     """
     Decodifica el payload de un token JWT sin verificar el tipo de token.
     
@@ -276,13 +277,15 @@ def decode_token_payload(
                     )
                     return Success(payload)
                 except Exception as e:
-                    return Failure(InvalidTokenError(f"Token inválido: {str(e)}"))
+                    return Failure(errors.InvalidTokenError(f"Token inválido: {str(e)}"))
         else:
             # Solo decodificar sin verificar firma
             payload = jwt.decode(
                 token,
+                key=None, # Explicitly set key to None when verify_signature is False
+                algorithms=None, # Explicitly set algorithms to None when verify_signature is False
                 options={"verify_signature": False, "verify_aud": False}
             )
             return Success(payload)
     except Exception as e:
-        return Failure(InvalidTokenError(f"Error al decodificar el token: {str(e)}"))
+        return Failure(errors.InvalidTokenError(f"Error al decodificar el token: {str(e)}"))

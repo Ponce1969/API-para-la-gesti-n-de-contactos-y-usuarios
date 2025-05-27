@@ -4,6 +4,7 @@ Módulo de excepciones personalizadas para el dominio de roles.
 Este módulo define excepciones personalizadas para manejar errores
 específicos del dominio de roles de manera consistente en toda la aplicación.
 """
+from typing import Optional # Import Optional
 
 from fastapi import HTTPException, status
 
@@ -18,7 +19,7 @@ class RoleError(AppError):
 class RoleNotFoundError(ResourceNotFoundError):
     """Excepción lanzada cuando no se encuentra un rol solicitado."""
     
-    def __init__(self, role_id: int = None, role_name: str = None):
+    def __init__(self, role_id: Optional[int] = None, role_name: Optional[str] = None): # Changed to Optional
         if role_id is not None:
             super().__init__(
                 resource_name="rol",
@@ -49,7 +50,7 @@ class RoleAlreadyExistsError(ConflictError):
 class RoleDeleteError(RoleError):
     """Excepción lanzada cuando no se puede eliminar un rol."""
     
-    def __init__(self, role_id: int = None, message: str = None):
+    def __init__(self, role_id: Optional[int] = None, message: Optional[str] = None): # Changed to Optional
         if message is None:
             if role_id is not None:
                 message = f"No se puede eliminar el rol con ID {role_id}"
@@ -65,7 +66,7 @@ class RoleDeleteError(RoleError):
 class SystemRoleModificationError(RoleError):
     """Excepción lanzada cuando se intenta modificar un rol del sistema."""
     
-    def __init__(self, role_id: int = None, role_name: str = None):
+    def __init__(self, role_id: Optional[int] = None, role_name: Optional[str] = None): # Changed to Optional
         detail = "No se puede modificar un rol del sistema"
         if role_id is not None:
             detail = f"No se puede modificar el rol del sistema con ID {role_id}"
@@ -81,7 +82,7 @@ class SystemRoleModificationError(RoleError):
 class PermissionNotFoundError(ResourceNotFoundError):
     """Excepción lanzada cuando no se encuentra un permiso solicitado."""
     
-    def __init__(self, permission_id: int = None, permission_code: str = None):
+    def __init__(self, permission_id: Optional[int] = None, permission_code: Optional[str] = None): # Changed to Optional
         if permission_id is not None:
             super().__init__(
                 resource_name="permiso",
@@ -103,7 +104,7 @@ class PermissionNotFoundError(ResourceNotFoundError):
 class PermissionAlreadyExistsError(ConflictError):
     """Excepción lanzada cuando se intenta crear un permiso que ya existe."""
     
-    def __init__(self, permission_code: str = None, permission_name: str = None):
+    def __init__(self, permission_code: Optional[str] = None, permission_name: Optional[str] = None): # Changed to Optional
         if permission_code is not None:
             super().__init__(
                 detail=f"Ya existe un permiso con el código '{permission_code}'"

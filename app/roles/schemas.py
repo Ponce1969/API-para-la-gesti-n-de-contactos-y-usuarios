@@ -23,8 +23,7 @@ class PermissionResponse(PermissionBase):
     created_at: datetime = Field(..., description="Fecha de creación del permiso")
     updated_at: datetime = Field(..., description="Fecha de última actualización del permiso")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # --- Role Schemas ---
@@ -55,8 +54,7 @@ class RoleResponse(RoleBase):
     updated_at: datetime = Field(..., description="Fecha de última actualización del rol")
     permissions: List[PermissionResponse] = Field([], description="Lista de permisos asociados al rol")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # --- RolePermission Schemas (Asignación de permisos a roles) ---
@@ -74,5 +72,4 @@ class RolePermissionResponse(BaseModel):
     # Podríamos anidar PermissionResponse aquí si es necesario en el futuro
     # permission: PermissionResponse
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}

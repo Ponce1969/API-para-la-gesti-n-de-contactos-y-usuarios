@@ -6,6 +6,7 @@ middlewares y dependencias necesarias.
 """
 
 import logging
+from typing import AsyncGenerator, Dict, Any # Added AsyncGenerator, Dict, Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -42,11 +43,11 @@ if settings.CORS_ORIGINS:
 
 # Manejo de errores de validación
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.error(f"Error de validación: {exc.errors()}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "body": exc.body},
+        content={"detail": exc.errors(), "body": exc.body}, # type: ignore
     )
 
 
@@ -66,7 +67,7 @@ app.include_router(roles_router, prefix=f"{settings.API_V1_STR}/roles", tags=["r
 
 # Health check endpoint
 @app.get("/health", tags=["health"])
-async def health_check():
+async def health_check() -> Dict[str, str]: # Added Dict return type
     return {"status": "healthy"}
 
 
@@ -75,7 +76,7 @@ from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]: # Added AsyncGenerator return type
     # Código que se ejecuta al inicio de la aplicación
     logger.info("Iniciando la aplicación...")
     # Aquí podrías inicializar conexiones a bases de datos, etc.
@@ -94,15 +95,15 @@ app.router.lifespan_context = lifespan
 # Configuración del servidor MCP (Model Context Protocol)
 if settings.MCP_ENABLED:
     try:
-        from fastapi_mcp import FastApiMCP
+        from fastapi_mcp import FastApiMCP # type: ignore
 
         logger.info("Configurando servidor MCP para integración con IA...")
 
         # Versión simplificada sin autenticación para prueba inicial
-        mcp = FastApiMCP(app)
+        mcp: FastApiMCP = FastApiMCP(app) # Added type hint for mcp
 
         # Montar el servidor MCP en la aplicación FastAPI
-        mcp.mount()
+        mcp.mount() # type: ignore
         logger.info("Servidor MCP configurado y montado correctamente")
     except ImportError as e:
         logger.error(f"Error al importar FastAPI-MCP: {e}")

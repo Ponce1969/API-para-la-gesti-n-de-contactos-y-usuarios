@@ -22,15 +22,16 @@ from app.users import service as user_service  # Import user service
 from app.users.errors import (
     UserNotFoundError as UsersUserNotFoundError,  # Specific user not found from user service
 )
-from app.users.models import User  # User model is in the users slice
+from app.users.models import User as UserModel  # User model is in the users slice, aliased
 from app.users.schemas import (  # User schemas are in the users slice
     UserCreate,
-    UserResponse,
+    UserResponse, # This is BaseResponse with data: UserPublic | None
+    UserPublic, # This is the schema for the actual user data
 )
 
 from . import errors as auth_errors  # Import auth specific errors
 from . import schemas, service
-from .schemas import Token  # Token schema is local to auth
+from .schemas import Token, Msg # Token and Msg schemas are local to auth
 
 router = APIRouter()
 
@@ -124,7 +125,7 @@ async def login_for_access_token(
 async def register_user(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
+) -> UserResponse: # UserResponse is BaseResponse(data: UserPublic | None)
     """
     Registra un nuevo usuario en el sistema.
 
@@ -159,14 +160,40 @@ async def register_user(
                                                    error interno del servidor.
     """
     try:
-        user = await service.register_user(db, user_data)
-        # Assuming service.register_user returns a User model (SQLAlchemy)
-        # and UserResponse is compatible or this endpoint should return User (SQLAlchemy model)
-        # For now, let's assume UserResponse can be created from the User model if needed by FastAPI
-        return user
-    except auth_errors.EmailAlreadyExistsError as e:
+        user_result = await service.register_user(db, user_data)
+
+        if user_result.is_failure():
+            error = user_result.failure()
+            if isinstance(error, auth_errors.EmailAlreadyExistsError):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, # Changed to 409 Conflict
+                    detail=str(error),
+                )
+            elif isinstance(error, DatabaseError): # Assuming service might return DatabaseError
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error de base de datos al registrar usuario.",
+                )
+            else: # Generic fallback
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error inesperado al registrar usuario.",
+                )
+        
+        created_user_model: UserModel = user_result.unwrap()
+        
+        # Convert UserModel to UserPublic schema for the response
+        user_public_data = UserPublic.model_validate(created_user_model)
+        
+        return UserResponse(
+            success=True,
+            message="Usuario registrado exitosamente.",
+            data=user_public_data
+        )
+
+    except auth_errors.EmailAlreadyExistsError as e: # This specific catch might be redundant if service returns Result
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT, # Changed to 409 Conflict
             detail=str(e),  # Use the message from the specific auth error
         )
     except DatabaseError:
@@ -252,13 +279,12 @@ async def refresh_token(
         # Generar nuevo access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         new_access_token = service.create_access_token(
-            data={"sub": user.email}, expires_delta=access_token_expires
+            data={"sub": user.email}, expires_delta=access_token_expires # user is UserModel
         )
 
         return Token(
             access_token=new_access_token,
-            token_type="bearer",
-            # Token schema does not include 'user' field
+            token_type="bearer"
         )
     except auth_errors.InvalidTokenError as e:
         raise HTTPException(
@@ -280,9 +306,9 @@ async def refresh_token(
     description="Envía un correo con un enlace para restablecer la contraseña.",
 )
 async def recover_password(
-    email: str,
+    email: str, # Changed from email_data: schemas.EmailSchema for simplicity if just email is needed
     db: AsyncSession = Depends(get_db),
-) -> schemas.Msg:
+) -> Msg: # Use the defined Msg schema
     """
     Inicia el proceso de recuperación de contraseña para un usuario.
 
@@ -313,16 +339,16 @@ async def recover_password(
                                                    conexión con la base de datos o un fallo
                                                    al intentar enviar el correo electrónico.
     """
+    # The service should handle UserNotFoundError gracefully and not expose it.
+    # The goal is to always return a 202 Accepted to prevent email enumeration.
     try:
         await service.send_password_reset_email(db, email)
-        return {
-            "message": "Si el correo existe, se ha enviado un enlace de recuperación"
-        }
-    except Exception:
-        # No revelar si el correo existe o no por razones de seguridad
-        return {
-            "message": "Si el correo existe, se ha enviado un enlace de recuperación"
-        }
+    except Exception as e:
+        # Log the error for internal review, but don't expose details to the client.
+        # logger.error(f"Error during password recovery request for {email}: {e}", exc_info=True)
+        pass # Fall through to the generic success message
+
+    return Msg(message="Si el correo existe, se ha enviado un enlace de recuperación")
 
 
 @router.post(
@@ -334,7 +360,7 @@ async def recover_password(
 async def reset_password(
     reset_data: schemas.ResetPasswordSchema,
     db: AsyncSession = Depends(get_db),
-) -> schemas.Msg:
+) -> Msg: # Use the defined Msg schema
     """
     Restablece la contraseña de un usuario utilizando un token de restablecimiento.
 
@@ -375,9 +401,29 @@ async def reset_password(
                                                    fallo al actualizar la contraseña.
     """
     try:
-        await service.reset_password(db, reset_data.token, reset_data.new_password)
-        return {"message": "Contraseña actualizada correctamente"}
-    except AuthenticationError as e:
+        password_reset_result = await service.reset_password(db, reset_data.token, reset_data.new_password)
+        
+        if password_reset_result.is_failure():
+            error = password_reset_result.failure()
+            if isinstance(error, auth_errors.InvalidTokenError):
+                 raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Token de restablecimiento inválido o expirado.",
+                )
+            elif isinstance(error, UsersUserNotFoundError): # If service can return this for token user
+                 raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Usuario no encontrado para el token proporcionado.",
+                )
+            else: # DatabaseError or other
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Error al procesar el restablecimiento de contraseña.",
+                )
+        
+        return Msg(message="Contraseña actualizada correctamente")
+
+    except auth_errors.AuthenticationError as e: # Fallback, though service.reset_password should return Result
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
